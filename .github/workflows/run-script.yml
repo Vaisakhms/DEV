@@ -1,7 +1,10 @@
-name: Run Script and Notify
+name: Run Market Analysis Script and Notify
 
 on:
   workflow_dispatch:
+  # Optional: You can also schedule it automatically (e.g., every weekday at 8:30 AM IST before market opens)
+  # schedule:
+  #   - cron: '30 3 * * 1-5'
 
 jobs:
   run-and-notify:
@@ -16,11 +19,10 @@ jobs:
           python-version: '3.10'
 
       - name: Install dependencies
-        run: pip install requests
+        run: pip install requests yfinance pandas
 
       - name: Run my python script
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        # Point Python to the exact folder path of your script:
         run: python TG_Alert/test/notify.py

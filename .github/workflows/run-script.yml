@@ -23,4 +23,4 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         # Point Python to the exact folder path of your script:
-        run: python main/TG_Alert/test/notify.py
+        run: python TG_Alert/test/notify.py

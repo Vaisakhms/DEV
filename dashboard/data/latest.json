@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "generated_at": null,
+  "generated_at_ist": "Waiting for first run",
+  "timezone": "Asia/Kolkata",
+  "market_status": "Awaiting first report",
+  "overall": {
+    "score": 0,
+    "label": "NEUTRAL / SIDEWAYS",
+    "coverage_pct": 0
+  },
+  "indices": {},
+  "pivots": null,
+  "options": null,
+  "global_markets": [],
+  "news": {
+    "score": null,
+    "items": []
+  },
+  "scores": {
+    "global_markets": null,
+    "news_sentiment": null,
+    "components": []
+  },
+  "disclaimer": "Rule-based indicators, not investment advice."
+}

@@ -725,7 +725,7 @@ const priceChart = addChart(priceContainer, { height: 300 });
         borderUpColor: "#22c55e",
         borderDownColor: "#ef4444",
         wickUpColor: "#22c55e",
-        wickDownColor: "#ef4444"
+        wickDownColor: "#ef4444",
         autoscaleInfoProvider: fixedPriceRange
     });
 

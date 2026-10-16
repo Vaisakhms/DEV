@@ -1,3 +1,4 @@
+#c#
 "use strict";
 
 const DATA_URL = "./data/latest.json";

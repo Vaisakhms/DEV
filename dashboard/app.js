@@ -1,67 +1,122 @@
 /* ============================================================
-   MARKET ANALYSIS DASHBOARD
+   MARKET PULSE DASHBOARD
    File: dashboard/app.js
-   Data files:
-     data/latest.json
-     data/history/index.json
-   Dependency:
-   Load Lightweight Charts v4.2.2 before this script in index.html.
+   Compatible with:
+   - dashboard/index.html
+   - dashboard/data/latest.json
+   - dashboard/data/history/index.json
+   - Lightweight Charts 4.2.2
    ============================================================ */
+
 (() => {
   "use strict";
+
   const CONFIG = {
-    latestUrl: "data/latest.json",
-    historyIndexUrl: "data/history/index.json",
+    latestUrl: "./data/latest.json",
+    historyUrl: "./data/history/index.json",
     refreshInterval: 60000,
-    requestTimeout: 15000,
-    defaultIndex: "Nifty 50",
-    defaultTimeframe: "15m",
+
     colors: {
       bullish: "#22c55e",
       bearish: "#ef4444",
+      neutral: "#94a3b8",
       sma20: "#f59e0b",
       sma50: "#38bdf8",
       sma100: "#c084fc",
       rsi: "#a78bfa",
-      grid: "rgba(148,163,184,0.12)",
+      grid: "rgba(148,163,184,0.15)",
       text: "#94a3b8"
     }
   };
+
   const state = {
     latest: null,
     history: [],
-    selectedIndex: CONFIG.defaultIndex,
-    selectedTimeframe: CONFIG.defaultTimeframe,
     selectedSnapshot: null,
+    selectedIndex: "Nifty 50",
+    selectedTimeframe: "Daily",
     priceChart: null,
     candleSeries: null,
     sma20Series: null,
     sma50Series: null,
     sma100Series: null,
+    volumeChart: null,
     volumeSeries: null,
     rsiChart: null,
     rsiSeries: null,
-    refreshTimer: null,
     resizeObserver: null,
+    refreshTimer: null,
     loading: false
   };
+
+  /* ============================================================
+     GENERAL HELPERS
+     ============================================================ */
+
   const $ = (selector, root = document) =>
     root.querySelector(selector);
+
   const $$ = (selector, root = document) =>
     Array.from(root.querySelectorAll(selector));
-  const first = (...values) =>
-    values.find(value =>
+
+  function el(id) {
+    return document.getElementById(id);
+  }
+
+  function first(...values) {
+    return values.find(value =>
       value !== undefined &&
       value !== null &&
       value !== ""
     );
-  function getElement(...ids) {
-    for (const id of ids) {
-      const element = document.getElementById(id);
-      if (element) return element;
-    }
-    return null;
   }
+
+  function number(value) {
+    if (
+      value === null ||
+      value === undefined ||
+      value === ""
+    ) {
+      return null;
+    }
+
+    const result = Number(value);
+
+    return Number.isFinite(result) ? result : null;
+  }
+
+  function fmt(value, decimals = 2) {
+    const n = number(value);
+
+    if (n === null) return "—";
+
+    return n.toLocaleString("en-IN", {
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals
+    });
+  }
+
+  function compact(value) {
+    const n = number(value);
+
+    if (n === null) return "—";
+
+    return Intl.NumberFormat("en-IN", {
+      notation: "compact",
+      maximumFractionDigits: 2
+    }).format(n);
+  }
+
+  function signed(value, decimals = 2, suffix = "") {
+    const n = number(value);
+
+    if (n === null) return "—";
+
+    const prefix = n > 0 ? "+" : "";
+
+    return prefix + fmt(n, decimals) + suffix;
+  }
+
   function escapeHtml(value) {
     return String(value ?? "")
       .replaceAll("&", "&amp;")
@@ -70,2382 +125,2538 @@
       .replaceAll('"', "&quot;")
       .replaceAll("'", "&#039;");
   }
-  function formatNumber(value, decimals = 2) {
-    const number = Number(value);
-    if (!Number.isFinite(number)) {
-      return "—";
-    }
-    return number.toLocaleString("en-IN", {
-      minimumFractionDigits: decimals,
-      maximumFractionDigits: decimals
-    });
-  }
-  function compactNumber(value) {
-    const number = Number(value);
-    if (!Number.isFinite(number)) {
-      return "—";
-    }
-    return Intl.NumberFormat("en-IN", {
-      notation: "compact",
-      maximumFractionDigits: 2
-    }).format(number);
-  }
-  function signedNumber(value, decimals = 2, suffix = "") {
-    const number = Number(value);
-    if (!Number.isFinite(number)) {
-      return "—";
-    }
-    const sign = number > 0 ? "+" : "";
-    return `${sign}${formatNumber(number, decimals)}${suffix}`;
-  }
-  function toArray(value) {
-    if (Array.isArray(value)) {
-      return value;
-    }
-    if (value && typeof value === "object") {
-      return Object.values(value);
-    }
-    return [];
-  }
-  function setText(target, value) {
-    const element =
-      typeof target === "string"
-        ? getElement(target)
-        : target;
-    if (!element) return;
-    element.textContent =
-      value === undefined || value === null || value === ""
+
+  function setText(id, value) {
+    const node = typeof id === "string" ? el(id) : id;
+
+    if (!node) return;
+
+    node.textContent =
+      value === undefined ||
+      value === null ||
+      value === ""
         ? "—"
         : String(value);
   }
-  function setHtml(target, html) {
-    const element =
-      typeof target === "string"
-        ? getElement(target)
-        : target;
-    if (element) {
-      element.innerHTML = html;
-    }
+
+  function setHTML(id, html) {
+    const node = typeof id === "string" ? el(id) : id;
+
+    if (node) node.innerHTML = html;
   }
-  function setStatus(message, type = "info") {
-    const statusElement = getElement(
-      "connectionStatus",
-      "statusMessage",
-      "dataStatus"
-    );
-    if (statusElement) {
-      statusElement.textContent = message;
-      statusElement.dataset.status = type;
-      statusElement.classList.toggle(
-        "is-error",
-        type === "error"
-      );
-      statusElement.classList.toggle(
-        "is-success",
-        type === "success"
-      );
-    }
-    const dot = getElement("connectionDot", "statusDot");
-    if (dot) {
-      dot.classList.toggle("is-error", type === "error");
-      dot.classList.toggle("is-success", type === "success");
-    }
+
+  function sentiment(value) {
+    const n = number(value);
+
+    if (n === null) return "neutral";
+
+    if (n > 0.05) return "bullish";
+
+    if (n < -0.05) return "bearish";
+
+    return "neutral";
   }
-  async function fetchJson(url) {
-    const controller = new AbortController();
-    const timeout = window.setTimeout(
-      () => controller.abort(),
-      CONFIG.requestTimeout
+
+  function badge(label, type = "neutral") {
+    return `
+      <span class="sentiment-badge ${type}">
+        ${escapeHtml(label)}
+      </span>
+    `;
+  }
+
+  function showEmpty(id, message) {
+    setHTML(
+      id,
+      `<div class="loading-card">${escapeHtml(message)}</div>`
     );
-    try {
-      const separator = url.includes("?") ? "&" : "?";
-      const response = await fetch(
-        `${url}${separator}_=${Date.now()}`,
-        {
-          cache: "no-store",
-          signal: controller.signal,
-          headers: {
-            Accept: "application/json"
-          }
-        }
-      );
-      if (!response.ok) {
-        throw new Error(
-          `HTTP ${response.status}: ${url}`
+  }
+
+  function getCurrentData() {
+    return state.selectedSnapshot || state.latest || {};
+  }
+
+  function getIndices(data = getCurrentData()) {
+    const indices = first(
+      data.indices,
+      data.indexes,
+      data.market_indices,
+      {}
+    );
+
+    return indices && typeof indices === "object"
+      ? indices
+      : {};
+  }
+
+  function getIndex(name, data = getCurrentData()) {
+    const indices = getIndices(data);
+
+    if (indices[name]) return indices[name];
+
+    const keys = Object.keys(indices);
+
+    const key = keys.find(k => {
+      const text = k.toLowerCase();
+
+      if (name === "Nifty 50") {
+        return (
+          text.includes("nifty") &&
+          !text.includes("bank") &&
+          !text.includes("midcap")
         );
       }
-      return await response.json();
-    } finally {
-      window.clearTimeout(timeout);
-    }
+
+      if (name === "Bank Nifty") {
+        return text.includes("bank") && text.includes("nifty");
+      }
+
+      if (name === "Nifty Midcap") {
+        return text.includes("midcap");
+      }
+
+      return false;
+    });
+
+    return key ? indices[key] : {};
   }
-  function getTimestamp(data) {
+
+  function getTimeframe(indexData, timeframe = state.selectedTimeframe) {
+    const frames = first(
+      indexData.timeframes,
+      indexData.time_frames,
+      {}
+    );
+
+    if (!frames || typeof frames !== "object") return {};
+
+    if (frames[timeframe]) return frames[timeframe];
+
+    const aliases = {
+      "15m": ["15min", "15_min"],
+      "30m": ["30min", "30_min"],
+      "1h": ["60m", "1hr", "60min"],
+      "Daily": ["daily", "1d", "D"]
+    };
+
+    for (const alias of aliases[timeframe] || []) {
+      if (frames[alias]) return frames[alias];
+    }
+
+    return {};
+  }
+
+  function getChartCandles(indexData, timeframe) {
+    const charts = first(
+      indexData.charts,
+      indexData.chart,
+      {}
+    );
+
+    return Array.isArray(charts[timeframe])
+      ? charts[timeframe]
+      : [];
+  }
+
+  function timestamp(data = getCurrentData()) {
     return first(
-      data?.generated_at_ist,
-      data?.generatedAtIST,
-      data?.generated_at,
-      data?.updated_at,
-      data?.timestamp,
-      data?.as_of,
-      data?.date
+      data.generated_at_ist,
+      data.generated_at,
+      data.updated_at,
+      data.timestamp,
+      data.date
     );
   }
+
   function formatTimestamp(value) {
-    if (!value) {
-      return "Update time unavailable";
-    }
-    let date;
-    if (typeof value === "number") {
-      date = new Date(
-        value < 1e12 ? value * 1000 : value
-      );
-    } else {
-      date = new Date(value);
-    }
+    if (!value) return "Unavailable";
+
+    const date = new Date(value);
+
     if (Number.isNaN(date.getTime())) {
       return String(value);
     }
-    return (
-      date.toLocaleString("en-IN", {
-        timeZone: "Asia/Kolkata",
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: true
-      }) + " IST"
-    );
+
+    return date.toLocaleString("en-IN", {
+      timeZone: "Asia/Kolkata",
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true
+    }) + " IST";
   }
-  function getIndices(data) {
-    const raw = first(
-      data?.indices,
-      data?.indexes,
-      data?.market_indices,
-      data?.markets,
-      {}
-    );
-    if (Array.isArray(raw)) {
-      const result = {};
-      raw.forEach(item => {
-        const name = first(
-          item?.name,
-          item?.index,
-          item?.title,
-          item?.symbol
-        );
-        if (name) {
-          result[name] = item;
+
+  async function fetchJSON(url) {
+    const response = await fetch(
+      url + "?_=" + Date.now(),
+      {
+        cache: "no-store",
+        headers: {
+          Accept: "application/json"
         }
-      });
-      return result;
-    }
-    return raw && typeof raw === "object"
-      ? raw
-      : {};
-  }
-  function getIndex(indexName, snapshot) {
-    const data =
-      snapshot ||
-      state.selectedSnapshot ||
-      state.latest ||
-      {};
-    const indices = getIndices(data);
-    if (indices[indexName]) {
-      return indices[indexName];
-    }
-    const aliases = {
-      "Nifty 50": [
-        "NIFTY 50",
-        "Nifty50",
-        "NIFTY",
-        "NSE:NIFTY50-INDEX"
-      ],
-      "Bank Nifty": [
-        "BANKNIFTY",
-        "NIFTY BANK",
-        "NSE:NIFTYBANK-INDEX"
-      ],
-      "Nifty Midcap": [
-        "Nifty Midcap 50",
-        "NIFTYMIDCAP50",
-        "NIFTY MIDCAP 50",
-        "NSE:NIFTYMIDCAP50-INDEX"
-      ]
-    };
-    for (const alias of aliases[indexName] || []) {
-      const matchingKey = Object.keys(indices).find(
-        key => key.toLowerCase() === alias.toLowerCase()
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(
+        `Unable to load ${url}: HTTP ${response.status}`
       );
-      if (matchingKey) {
-        return indices[matchingKey];
-      }
     }
-    const found = Object.entries(indices).find(
-      ([key, item]) => {
-        const text = (
-          `${key} ${item?.name || ""} ${item?.symbol || ""}`
-        ).toLowerCase();
-        if (indexName === "Nifty 50") {
-          return (
-            text.includes("nifty") &&
-            !text.includes("bank") &&
-            !text.includes("midcap")
-          );
-        }
-        if (indexName === "Bank Nifty") {
-          return (
-            text.includes("bank") &&
-            text.includes("nifty")
-          );
-        }
-        if (indexName === "Nifty Midcap") {
-          return text.includes("midcap");
-        }
-        return false;
-      }
-    );
-    return found?.[1] || {};
+
+    return response.json();
   }
-  function getTimeframes(indexObject) {
-    const raw = first(
-      indexObject?.timeframes,
-      indexObject?.time_frames,
-      indexObject?.intervals,
-      indexObject?.frames,
-      indexObject?.data,
-      {}
-    );
-    return raw && typeof raw === "object"
-      ? raw
-      : {};
-  }
-  function getFrame(
-    indexName,
-    timeframe,
-    snapshot
-  ) {
-    const indexObject = getIndex(
-      indexName,
-      snapshot
-    );
-    const frames = getTimeframes(indexObject);
-    const aliases = {
-      "15m": [
-        "15m",
-        "15min",
-        "15_min",
-        "15 minutes",
-        "15"
-      ],
-      "30m": [
-        "30m",
-        "30min",
-        "30_min",
-        "30 minutes",
-        "30"
-      ],
-      "1h": [
-        "1h",
-        "60m",
-        "60min",
-        "1hour",
-        "1 hour",
-        "60"
-      ],
-      "Daily": [
-        "Daily",
-        "daily",
-        "1d",
-        "D",
-        "day"
-      ]
-    };
-    for (const alias of aliases[timeframe] || [timeframe]) {
-      const key = Object.keys(frames).find(
-        item => item.toLowerCase() === alias.toLowerCase()
-      );
-      if (key) {
-        return frames[key] || {};
-      }
+
+  function updateStatus(message, type = "success") {
+    setText("dataStatus", message);
+
+    const status = el("dataStatus");
+
+    if (status) {
+      status.dataset.status = type;
+      status.classList.toggle("is-error", type === "error");
+      status.classList.toggle("is-success", type === "success");
     }
-    return {};
   }
-  function getCandles(frame) {
-    const rawCandles = toArray(
+
+  /* ============================================================
+     HEADER AND OVERALL MARKET SCORE
+     ============================================================ */
+
+  function renderHeader(data) {
+    const marketStatus = first(
+      data.market_status,
+      data.marketStatus,
+      "Market status unavailable"
+    );
+
+    setText("marketStatus", marketStatus);
+
+    const time = formatTimestamp(timestamp(data));
+
+    setText("lastUpdated", time);
+    setText("dataTimestamp", time);
+
+    setText(
+      "sessionSummary",
+      marketStatus
+    );
+  }
+
+  function renderOverall(data) {
+    const overall = first(data.overall, {});
+
+    const rawScore = number(overall.score);
+
+    const label = first(
+      overall.label,
+      "Market bias unavailable"
+    );
+
+    const coverage = number(
       first(
-        frame?.candles,
-        frame?.ohlc,
-        frame?.history,
-        frame?.chart_data,
-        frame?.chartData,
-        frame?.bars,
-        frame?.data_points,
-        frame?.prices,
-        []
+        overall.coverage_pct,
+        overall.coverage,
+        0
       )
     );
+
+    setText(
+      "overallScore",
+      rawScore === null ? "—" : fmt(rawScore, 1)
+    );
+
+    setText("overallLabel", label);
+
+    setText(
+      "scoreGaugeValue",
+      rawScore === null ? "—" : fmt(rawScore, 1)
+    );
+
+    setText(
+      "coverageValue",
+      coverage === null ? "—" : fmt(coverage, 0) + "%"
+    );
+
+    const coverageFill = el("coverageFill");
+
+    if (coverageFill) {
+      coverageFill.style.width =
+        Math.max(0, Math.min(100, coverage || 0)) + "%";
+    }
+
+    /*
+      The overall score in the JSON is a weighted score.
+      Use its numeric value for the gauge without inventing
+      a different score.
+    */
+
+    const scoreFill = el("scoreTrackFill");
+
+    if (scoreFill) {
+      const gaugeWidth = rawScore === null
+        ? 0
+        : Math.max(0, Math.min(100, rawScore));
+
+      scoreFill.style.width = gaugeWidth + "%";
+    }
+
+    const gauge = el("scoreGauge");
+
+    if (gauge) {
+      const gaugeValue = rawScore === null
+        ? 0
+        : Math.max(0, Math.min(100, rawScore));
+
+      gauge.style.background =
+        `conic-gradient(
+          ${CONFIG.colors.bullish} ${gaugeValue}%,
+          ${CONFIG.colors.grid} ${gaugeValue}%
+        )`;
+    }
+
+    setText(
+      "scoreNote",
+      `Analysis coverage: ${fmt(coverage, 0)}%. ` +
+      `Last updated: ${formatTimestamp(timestamp(data))}`
+    );
+  }
+
+  /* ============================================================
+     MARKET SNAPSHOT
+     ============================================================ */
+
+  function renderSnapshot(data) {
+    const indices = getIndices(data);
+
+    const names = [
+      "Nifty 50",
+      "Bank Nifty",
+      "Nifty Midcap"
+    ];
+
+    const cards = names.map(name => {
+      const indexData = getIndex(name, data);
+
+      const frames = first(indexData.timeframes, {});
+
+      const daily = first(
+        frames.Daily,
+        frames.daily,
+        frames["1d"],
+        {}
+      );
+
+      const intraday = first(
+        frames["15m"],
+        frames["30m"],
+        {}
+      );
+
+      const close = first(
+        daily.close,
+        intraday.close,
+        indexData.close,
+        indexData.price
+      );
+
+      const change = first(
+        daily.chg,
+        daily.change_pct,
+        daily.change,
+        intraday.chg,
+        indexData.change_pct
+      );
+
+      const changeNumber = number(change);
+
+      const direction = sentiment(
+        changeNumber === null ? 0 : changeNumber
+      );
+
+      const title = name;
+
+      const trend = first(
+        daily.label,
+        intraday.label,
+        indexData.label,
+        direction === "bullish"
+          ? "Positive"
+          : direction === "bearish"
+            ? "Negative"
+            : "Neutral"
+      );
+
+      return `
+        <article class="panel index-card">
+          <div class="index-card-top">
+            <span class="index-name">
+              ${escapeHtml(title)}
+            </span>
+            ${badge(trend, direction)}
+          </div>
+
+          <div class="index-price">
+            ${fmt(close)}
+          </div>
+
+          <div class="index-change ${direction}">
+            ${signed(changeNumber, 2, "%")}
+          </div>
+
+          <div class="index-card-footer">
+            <span>Daily change</span>
+            <span>
+              ${close === undefined ? "No data" : "Latest snapshot"}
+            </span>
+          </div>
+        </article>
+      `;
+    });
+
+    if (!Object.keys(indices).length) {
+      showEmpty("indexCards", "No index data available.");
+      return;
+    }
+
+    setHTML("indexCards", cards.join(""));
+  }
+
+  /* ============================================================
+     PART 2 CONTINUES BELOW
+     ============================================================ */
+  /* ============================================================
+     CHART DATA HELPERS
+     ============================================================ */
+
+  function findContainer(ids) {
+    for (const id of ids) {
+      const node = el(id);
+      if (node) return node;
+    }
+
+    return null;
+  }
+
+  function renderInto(ids, html, emptyMessage = "No data available.") {
+    const node = findContainer(ids);
+
+    if (!node) {
+      console.warn("Dashboard container not found:", ids);
+      return false;
+    }
+
+    node.innerHTML = html || `
+      <div class="loading-card">
+        ${escapeHtml(emptyMessage)}
+      </div>
+    `;
+
+    return true;
+  }
+
+  function getTechnicalData(indexData, timeframe) {
+    const frame = getTimeframe(indexData, timeframe);
+
+    return first(
+      frame.technical,
+      frame.indicators,
+      frame.technicals,
+      indexData.technical,
+      indexData.indicators,
+      {}
+    );
+  }
+
+  function getCandles(indexData, timeframe) {
+    const frame = getTimeframe(indexData, timeframe);
+
+    const candidates = [
+      frame.candles,
+      frame.ohlc,
+      frame.history,
+      frame.data,
+      frame.prices,
+      indexData.candles,
+      indexData.ohlc,
+      getChartCandles(indexData, timeframe)
+    ];
+
+    for (const candidate of candidates) {
+      if (Array.isArray(candidate) && candidate.length) {
+        return candidate;
+      }
+    }
+
+    return [];
+  }
+
+  function candleValue(candle, keys) {
+    for (const key of keys) {
+      if (
+        candle &&
+        candle[key] !== undefined &&
+        candle[key] !== null
+      ) {
+        return candle[key];
+      }
+    }
+
+    return null;
+  }
+
+  function normalizeCandles(rawCandles) {
     return rawCandles
       .map(candle => {
-        let time = first(
-          candle?.time,
-          candle?.timestamp,
-          candle?.date,
-          candle?.datetime,
-          candle?.t
-        );
-        if (typeof time === "string") {
-          const parsed = Date.parse(time);
+        const rawTime = candleValue(candle, [
+          "time",
+          "timestamp",
+          "datetime",
+          "date",
+          "t"
+        ]);
+
+        let time = rawTime;
+
+        if (typeof rawTime === "string") {
+          const parsed = Date.parse(rawTime);
+
           if (Number.isFinite(parsed)) {
             time = Math.floor(parsed / 1000);
           }
-        } else if (
-          typeof time === "number" &&
-          time > 1e12
-        ) {
-          time = Math.floor(time / 1000);
+        } else if (typeof rawTime === "number") {
+          /*
+            Epoch timestamps may be in milliseconds.
+            Convert them to seconds for Lightweight Charts.
+          */
+          if (rawTime > 100000000000) {
+            time = Math.floor(rawTime / 1000);
+          }
         }
-        const open = Number(
-          first(candle?.open, candle?.o)
-        );
-        const high = Number(
-          first(candle?.high, candle?.h)
-        );
-        const low = Number(
-          first(candle?.low, candle?.l)
-        );
-        const close = Number(
-          first(candle?.close, candle?.c)
-        );
-        const volume = Number(
-          first(
-            candle?.volume,
-            candle?.vol,
-            candle?.v,
-            0
-          )
-        );
+
+        const open = number(candleValue(candle, [
+          "open", "o"
+        ]));
+
+        const high = number(candleValue(candle, [
+          "high", "h"
+        ]));
+
+        const low = number(candleValue(candle, [
+          "low", "l"
+        ]));
+
+        const close = number(candleValue(candle, [
+          "close", "c"
+        ]));
+
+        const volume = number(candleValue(candle, [
+          "volume", "vol", "v"
+        ]));
+
         if (
-          time == null ||
-          ![open, high, low, close].every(Number.isFinite)
+          time === null ||
+          time === undefined ||
+          open === null ||
+          high === null ||
+          low === null ||
+          close === null
         ) {
           return null;
         }
+
         return {
           time,
           open,
           high,
           low,
           close,
-          volume: Number.isFinite(volume) ? volume : 0
+          volume
         };
       })
       .filter(Boolean)
-      .sort((a, b) => a.time < b.time ? -1 : a.time > b.time ? 1 : 0)
-      .filter(
-        (candle, index, list) =>
-          index === 0 ||
-          candle.time !== list[index - 1].time
-      );
+      .sort((a, b) => {
+        const ta = typeof a.time === "number"
+          ? a.time
+          : Date.parse(a.time);
+
+        const tb = typeof b.time === "number"
+          ? b.time
+          : Date.parse(b.time);
+
+        return ta - tb;
+      });
   }
-  function calculateSMA(candles, index, period) {
-    if (index + 1 < period) {
+
+  function getSMAValues(candles, period) {
+    const result = [];
+    const closes = candles.map(c => c.close);
+
+    for (let i = period - 1; i < closes.length; i++) {
+      const window = closes.slice(i - period + 1, i + 1);
+
+      const average =
+        window.reduce((sum, value) => sum + value, 0) /
+        period;
+
+      result.push({
+        time: candles[i].time,
+        value: average
+      });
+    }
+
+    return result;
+  }
+
+  function getRSIValues(candles, period = 14) {
+    const result = [];
+
+    if (candles.length <= period) {
+      return result;
+    }
+
+    let gains = 0;
+    let losses = 0;
+
+    for (let i = 1; i <= period; i++) {
+      const change =
+        candles[i].close - candles[i - 1].close;
+
+      if (change > 0) {
+        gains += change;
+      } else {
+        losses += Math.abs(change);
+      }
+    }
+
+    let averageGain = gains / period;
+    let averageLoss = losses / period;
+
+    function calculateRSI(gain, loss) {
+      if (loss === 0) return 100;
+
+      const rs = gain / loss;
+
+      return 100 - 100 / (1 + rs);
+    }
+
+    result.push({
+      time: candles[period].time,
+      value: calculateRSI(averageGain, averageLoss)
+    });
+
+    for (let i = period + 1; i < candles.length; i++) {
+      const change =
+        candles[i].close - candles[i - 1].close;
+
+      const gain = Math.max(change, 0);
+      const loss = Math.max(-change, 0);
+
+      averageGain =
+        (averageGain * (period - 1) + gain) / period;
+
+      averageLoss =
+        (averageLoss * (period - 1) + loss) / period;
+
+      result.push({
+        time: candles[i].time,
+        value: calculateRSI(averageGain, averageLoss)
+      });
+    }
+
+    return result;
+  }
+
+  function getVolumeValues(candles) {
+    return candles
+      .filter(c => c.volume !== null)
+      .map(c => ({
+        time: c.time,
+        value: c.volume,
+        color: c.close >= c.open
+          ? CONFIG.colors.bullish
+          : CONFIG.colors.bearish
+      }));
+  }
+
+  /* ============================================================
+     CHART LIFECYCLE
+     ============================================================ */
+
+  function removeChart(chart) {
+    if (!chart) return;
+
+    try {
+      chart.remove();
+    } catch (error) {
+      console.warn("Could not remove chart:", error);
+    }
+  }
+
+  function createChart(container, options = {}) {
+    if (!container) return null;
+
+    if (!window.LightweightCharts) {
+      console.error(
+        "Lightweight Charts library is not available."
+      );
+
+      container.innerHTML = `
+        <div class="loading-card">
+          Chart library could not be loaded.
+          Check your internet connection and the chart script URL.
+        </div>
+      `;
+
       return null;
     }
-    let total = 0;
-    for (
-      let i = index - period + 1;
-      i <= index;
-      i++
-    ) {
-      total += candles[i].close;
-    }
-    return total / period;
-  }
-  function getSMAPoints(
-    frame,
-    candles,
-    key,
-    aliases,
-    period
-  ) {
-    const raw = first(
-      frame?.[key],
-      ...aliases.map(alias => frame?.[alias])
-    );
-    if (Array.isArray(raw)) {
-      return raw
-        .map((point, index) => {
-          if (typeof point === "number") {
-            return {
-              time: candles[index]?.time,
-              value: point
-            };
-          }
-          let time = first(
-            point?.time,
-            point?.timestamp,
-            point?.date,
-            candles[index]?.time
-          );
-          if (typeof time === "string") {
-            const parsed = Date.parse(time);
-            if (Number.isFinite(parsed)) {
-              time = Math.floor(parsed / 1000);
-            }
-          } else if (
-            typeof time === "number" &&
-            time > 1e12
-          ) {
-            time = Math.floor(time / 1000);
-          }
-          return {
-            time,
-            value: Number(
-              first(
-                point?.value,
-                point?.close,
-                point?.[key]
-              )
-            )
-          };
-        })
-        .filter(
-          point =>
-            point.time != null &&
-            Number.isFinite(point.value)
-        );
-    }
-    return candles
-      .map((candle, index) => {
-        const value = calculateSMA(
-          candles,
-          index,
-          period
-        );
-        return value == null
-          ? null
-          : {
-              time: candle.time,
-              value
-            };
-      })
-      .filter(Boolean);
-  }
-    function getChange(frame) {
-    return first(
-      frame?.change_percent,
-      frame?.changePercent,
-      frame?.chg_pct,
-      frame?.chg,
-      frame?.change,
-      frame?.percent_change
-    );
-  }
-  function getLastClose(frame, candles) {
-    return first(
-      frame?.close,
-      frame?.ltp,
-      frame?.last_price,
-      frame?.lastPrice,
-      frame?.price,
-      candles.at(-1)?.close
-    );
-  }
-  function getSentiment(value) {
-    const text = String(value ?? "").toLowerCase();
-    if (
-      text.includes("bull") ||
-      text.includes("positive") ||
-      text.includes("buy")
-    ) {
-      return "bullish";
-    }
-    if (
-      text.includes("bear") ||
-      text.includes("negative") ||
-      text.includes("sell")
-    ) {
-      return "bearish";
-    }
-    return "neutral";
-  }
-  function createBadge(label, sentiment = null) {
-    const text = label || "Neutral";
-    const className = sentiment || getSentiment(text);
-    return `
-      <span class="badge ${escapeHtml(className)}">
-        ${escapeHtml(text)}
-      </span>
-    `;
-  }
-  /* ============================================================
-     HEADER AND OVERALL MARKET BIAS
-     ============================================================ */
-  function renderHeader(data) {
-    const generatedAt = getTimestamp(data);
-    setText("lastUpdated", formatTimestamp(generatedAt));
-    setText("updatedAt", formatTimestamp(generatedAt));
-    setText("marketDate", formatTimestamp(generatedAt));
-    setText(
-      "marketStatus",
-      first(
-        data?.market_status,
-        data?.marketStatus,
-        data?.session_status,
-        "Market status unavailable"
-      )
-    );
-    const score = first(
-      data?.score,
-      data?.overall_score,
-      data?.overallScore,
-      data?.market_score
-    );
-    const label = first(
-      data?.label,
-      data?.overall_label,
-      data?.overallLabel,
-      data?.bias,
-      data?.market_bias,
-      "Neutral"
-    );
-    setText(
-      "overallScore",
-      score == null ? "—" : signedNumber(score, 0)
-    );
-    setText("overallLabel", label);
-    setText("marketBias", label);
-    const scoreElement = getElement(
-      "overallScore",
-      "marketScore"
-    );
-    if (scoreElement) {
-      scoreElement.classList.remove(
-        "bullish",
-        "bearish",
-        "neutral"
-      );
-      scoreElement.classList.add(
-        getSentiment(label)
-      );
-    }
-    const coverage = first(
-      data?.coverage,
-      data?.coverage_percent,
-      data?.coveragePercent
-    );
-    setText(
-      "coverage",
-      coverage == null
-        ? "—"
-        : `${formatNumber(coverage, 0)}%`
-    );
-    const summary = first(
-      data?.market_summary,
-      data?.summary,
-      data?.overall_summary,
-      data?.commentary
-    );
-    if (summary) {
-      setText("marketSummary", summary);
-    }
-  }
-  /* ============================================================
-     INDEX CARDS
-     ============================================================ */
-  function renderIndexCards(data) {
-    const indices = getIndices(data);
-    const targets = [
-      {
-        title: "Nifty 50",
-        matches: ["nifty 50", "nifty50", "nse:nifty50-index"]
+
+    return LightweightCharts.createChart(container, {
+      width: Math.max(container.clientWidth, 280),
+      height: options.height || 280,
+
+      layout: {
+        background: {
+          type: "solid",
+          color: "transparent"
+        },
+        textColor: CONFIG.colors.text,
+        fontSize: 11
       },
-      {
-        title: "Bank Nifty",
-        matches: [
-          "bank nifty",
-          "nifty bank",
-          "niftybank",
-          "nse:niftybank-index"
-        ]
-      },
-      {
-        title: "Nifty Midcap",
-        matches: ["midcap", "nifty midcap"]
-      }
-    ];
-    const cards = [];
-    targets.forEach(target => {
-      const entry = Object.entries(indices).find(
-        ([key, item]) => {
-          const text = (
-            `${key} ${item?.name || ""} ${item?.symbol || ""}`
-          ).toLowerCase();
-          return target.matches.some(
-            match => text.includes(match)
-          );
+
+      grid: {
+        vertLines: {
+          color: CONFIG.colors.grid
+        },
+        horzLines: {
+          color: CONFIG.colors.grid
         }
-      );
-      if (!entry) return;
-      const [indexName, indexData] = entry;
-      const frame = getFrame(
-        indexName,
-        state.selectedTimeframe,
-        data
-      );
-      const candles = getCandles(frame);
-      const price = first(
-        getLastClose(frame, candles),
-        indexData?.ltp,
-        indexData?.price,
-        indexData?.close
-      );
-      const changeValue =
-        getChange(frame) ?? getChange(indexData);
-      const label = first(
-        frame?.label,
-        frame?.bias,
-        frame?.trend,
-        indexData?.label,
-        indexData?.bias,
-        "Neutral"
-      );
-      const changeClass =
-        Number(changeValue) > 0
-          ? "bullish"
-          : Number(changeValue) < 0
-            ? "bearish"
-            : "neutral";
-      const rsi = first(
-        frame?.rsi,
-        frame?.RSI
-      );
-      const score = first(
-        frame?.score,
-        frame?.weighted_score,
-        frame?.weightedScore
-      );
-      cards.push(`
-        <article class="index-card">
-          <div class="index-card-top">
-            <span class="index-name">
-              ${escapeHtml(target.title)}
-            </span>
-            ${createBadge(label)}
-          </div>
-          <div class="index-price">
-            ${price == null ? "—" : formatNumber(price)}
-          </div>
-          <div class="index-change ${changeClass}">
-            ${changeValue == null
-              ? "—"
-              : signedNumber(changeValue, 2, "%")}
-          </div>
-          <div class="index-card-bottom">
-            <span>
-              RSI <b>${formatNumber(rsi, 1)}</b>
-            </span>
-            <span>
-              Score <b>${escapeHtml(score ?? "—")}</b>
-            </span>
-          </div>
-        </article>
-      `);
-    });
-    const container = getElement(
-      "indexCards",
-      "indicesGrid",
-      "marketCards",
-      "indexOverview"
-    );
-    if (!container) return;
-    setHtml(
-      container,
-      cards.length
-        ? cards.join("")
-        : `
-          <div class="empty-state">
-            Index data is not available in this snapshot.
-          </div>
-        `
-    );
-  }
-  /* ============================================================
-     SCORE BREAKDOWN
-     ============================================================ */
-  function renderScoreBreakdown(data) {
-    const rows = toArray(
-      first(
-        data?.score_breakdown,
-        data?.scoreBreakdown,
-        data?.components,
-        data?.signals,
-        data?.weighted_factors,
-        []
-      )
-    );
-    const container = getElement(
-      "scoreBreakdown",
-      "scoreComponents",
-      "factorBreakdown"
-    );
-    if (!container) return;
-    if (!rows.length) {
-      setHtml(
-        container,
-        '<div class="empty-state">No score breakdown available.</div>'
-      );
-      return;
-    }
-    setHtml(
-      container,
-      rows.map(item => {
-        const name = first(
-          item?.name,
-          item?.factor,
-          item?.component,
-          item?.title,
-          "Factor"
-        );
-        const score = first(
-          item?.score,
-          item?.value,
-          item?.weighted_score,
-          item?.points
-        );
-        const label = first(
-          item?.label,
-          item?.signal,
-          item?.bias,
-          item?.status,
-          "Neutral"
-        );
-        const detail = first(
-          item?.detail,
-          item?.description,
-          item?.reason,
-          item?.comment,
-          ""
-        );
-        const numericScore = Number(score);
-        const width = Number.isFinite(numericScore)
-          ? Math.min(100, Math.abs(numericScore))
-          : 0;
-        return `
-          <div class="score-row">
-            <div class="score-row-head">
-              <span>${escapeHtml(name)}</span>
-              <span>
-                ${score == null
-                  ? "—"
-                  : escapeHtml(signedNumber(score, 1))}
-              </span>
-            </div>
-            <div class="score-track">
-              <span
-                class="score-fill ${getSentiment(score)}"
-                style="width:${width}%"
-              ></span>
-            </div>
-            <div class="score-row-foot">
-              ${createBadge(label)}
-              ${detail
-                ? `<span class="muted">${escapeHtml(detail)}</span>`
-                : ""}
-            </div>
-          </div>
-        `;
-      }).join("")
-    );
-  }
-  /* ============================================================
-     OPTIONS / PUT-CALL RATIO / OPEN INTEREST
-     ============================================================ */
-  function renderOptions(data) {
-    const options = first(
-      data?.options,
-      data?.option_chain,
-      data?.optionChain,
-      data?.oi_analysis,
-      data?.oiAnalysis,
-      {}
-    );
-    const container = getElement(
-      "optionsPanel",
-      "optionsData",
-      "optionsContent"
-    );
-    if (!container) return;
-    const pcr = first(
-      options?.pcr,
-      options?.overall_pcr,
-      options?.overallPCR,
-      options?.put_call_ratio
-    );
-    const atmPcr = first(
-      options?.near_atm_pcr,
-      options?.nearATMPcr,
-      options?.atm_pcr,
-      options?.atmPCR
-    );
-    const support = first(
-      options?.support,
-      options?.support_level,
-      options?.supportLevel,
-      options?.max_pain
-    );
-    const resistance = first(
-      options?.resistance,
-      options?.resistance_level,
-      options?.resistanceLevel
-    );
-    const callOi = first(
-      options?.call_oi,
-      options?.callOI,
-      options?.ce_oi,
-      options?.total_ce_oi,
-      options?.ce?.oi
-    );
-    const putOi = first(
-      options?.put_oi,
-      options?.putOI,
-      options?.pe_oi,
-      options?.total_pe_oi,
-      options?.pe?.oi
-    );
-    const bias = first(
-      options?.bias,
-      options?.sentiment,
-      options?.label,
-      options?.interpretation
-    );
-    setHtml(
-      container,
-      `
-        <div class="metric-grid">
-          <div class="metric">
-            <span>PCR</span>
-            <strong>${pcr == null ? "—" : formatNumber(pcr)}</strong>
-          </div>
-          <div class="metric">
-            <span>Near-ATM PCR</span>
-            <strong>${atmPcr == null ? "—" : formatNumber(atmPcr)}</strong>
-          </div>
-          <div class="metric">
-            <span>Support</span>
-            <strong>${support == null ? "—" : formatNumber(support, 0)}</strong>
-          </div>
-          <div class="metric">
-            <span>Resistance</span>
-            <strong>${resistance == null ? "—" : formatNumber(resistance, 0)}</strong>
-          </div>
-          <div class="metric">
-            <span>Call OI</span>
-            <strong>${callOi == null ? "—" : compactNumber(callOi)}</strong>
-          </div>
-          <div class="metric">
-            <span>Put OI</span>
-            <strong>${putOi == null ? "—" : compactNumber(putOi)}</strong>
-          </div>
-        </div>
-        ${bias
-          ? `<div class="options-bias">
-               Options bias: ${createBadge(bias)}
-             </div>`
-          : ""}
-      `
-    );
-  }
-  /* ============================================================
-     GLOBAL MARKETS
-     ============================================================ */
-  function renderGlobalMarkets(data) {
-    const rows = toArray(
-      first(
-        data?.global_markets,
-        data?.globalMarkets,
-        data?.global_indices,
-        data?.globalIndices,
-        data?.international_markets,
-        data?.global,
-        []
-      )
-    );
-    const container = getElement(
-      "globalMarkets",
-      "globalMarketsList",
-      "globalMarketData"
-    );
-    if (!container) return;
-    if (!rows.length) {
-      setHtml(
-        container,
-        '<div class="empty-state">Global market data is not available.</div>'
-      );
-      return;
-    }
-    setHtml(
-      container,
-      rows.map(item => {
-        const name = first(
-          item?.name,
-          item?.index,
-          item?.symbol,
-          item?.title,
-          "Market"
-        );
-        const price = first(
-          item?.price,
-          item?.close,
-          item?.value,
-          item?.last,
-          item?.ltp
-        );
-        const changeValue = first(
-          item?.change_percent,
-          item?.changePercent,
-          item?.chg_pct,
-          item?.change,
-          item?.pct_change,
-          item?.percent
-        );
-        const changeClass =
-          Number(changeValue) > 0
-            ? "bullish"
-            : Number(changeValue) < 0
-              ? "bearish"
-              : "neutral";
-        return `
-          <div class="market-row">
-            <span class="market-row-name">
-              ${escapeHtml(name)}
-            </span>
-            <span class="market-row-price">
-              ${price == null ? "—" : formatNumber(price)}
-            </span>
-            <span class="market-row-change ${changeClass}">
-              ${changeValue == null
-                ? "—"
-                : signedNumber(changeValue, 2, "%")}
-            </span>
-          </div>
-        `;
-      }).join("")
-    );
-  }
-  /* ============================================================
-     NEWS
-     ============================================================ */
-  function renderNews(data) {
-    const rows = toArray(
-      first(
-        data?.news,
-        data?.headlines,
-        data?.sentiment_news,
-        data?.sentimentNews,
-        []
-      )
-    );
-    const container = getElement(
-      "newsList",
-      "newsFeed",
-      "newsContainer"
-    );
-    if (!container) return;
-    if (!rows.length) {
-      setHtml(
-        container,
-        '<div class="empty-state">No news headlines in this snapshot.</div>'
-      );
-      return;
-    }
-    setHtml(
-      container,
-      rows.slice(0, 30).map(item => {
-        const title = first(
-          item?.title,
-          item?.headline,
-          item?.text,
-          "Untitled headline"
-        );
-        const source = first(
-          item?.source,
-          item?.publisher,
-          item?.site,
-          ""
-        );
-        const published = first(
-          item?.published,
-          item?.published_at,
-          item?.publishedAt,
-          item?.date,
-          ""
-        );
-        const label = first(
-          item?.sentiment,
-          item?.label,
-          item?.bias,
-          ""
-        );
-        const url = first(
-          item?.url,
-          item?.link,
-          item?.href,
-          ""
-        );
-        const safeTitle = escapeHtml(title);
-        const titleHtml =
-          url && /^https?:\/\//i.test(String(url))
-            ? `<a href="${escapeHtml(url)}"
-                  target="_blank"
-                  rel="noopener noreferrer">${safeTitle}</a>`
-            : `<span>${safeTitle}</span>`;
-        return `
-          <article class="news-item">
-            <div class="news-title">
-              ${titleHtml}
-            </div>
-            <div class="news-meta">
-              <span>${escapeHtml(source)}</span>
-              <span>${escapeHtml(published)}</span>
-              ${label ? createBadge(label) : ""}
-            </div>
-          </article>
-        `;
-      }).join("")
-    );
-  }
-  /* ============================================================
-     SEVEN-DAY SUMMARY
-     ============================================================ */
-  function renderSevenDay(data) {
-    const summary = first(
-      data?.seven_day,
-      data?.sevenDay,
-      data?.weekly_summary,
-      data?.weeklySummary,
-      data?.last_7_days,
-      data?.history_summary
-    );
-    const container = getElement(
-      "sevenDaySummary",
-      "weeklySummary",
-      "sevenDay"
-    );
-    if (!container) return;
-    if (!summary) {
-      setHtml(
-        container,
-        '<div class="empty-state">Seven-day summary is not available.</div>'
-      );
-      return;
-    }
-    if (Array.isArray(summary)) {
-      setHtml(
-        container,
-        summary.map(item => `
-          <div class="summary-row">
-            <span>
-              ${escapeHtml(first(item?.date, item?.day, item?.label, "—"))}
-            </span>
-            <span>
-              ${escapeHtml(first(item?.bias, item?.label, item?.trend, "—"))}
-            </span>
-            <strong>
-              ${escapeHtml(first(item?.score, item?.value, "—"))}
-            </strong>
-          </div>
-        `).join("")
-      );
-      return;
-    }
-    if (typeof summary === "object") {
-      const entries = Object.entries(summary);
-      setHtml(
-        container,
-        entries.length
-          ? entries.map(([key, value]) => {
-              if (value && typeof value === "object") {
-                return `
-                  <div class="summary-row">
-                    <span>${escapeHtml(first(value.date, value.day, key))}</span>
-                    <span>${escapeHtml(first(value.bias, value.label, value.trend, "—"))}</span>
-                    <strong>${escapeHtml(first(value.score, value.value, "—"))}</strong>
-                  </div>
-                `;
-              }
-              return `
-                <div class="summary-row">
-                  <span>${escapeHtml(key)}</span>
-                  <strong>${escapeHtml(value)}</strong>
-                </div>
-              `;
-            }).join("")
-          : '<div class="empty-state">No seven-day summary available.</div>'
-      );
-      return;
-    }
-    setText(container, summary);
-  }
-  /* ============================================================
-     CHART INITIALIZATION
-     ============================================================ */
-  function initializeCharts() {
-    if (!window.LightweightCharts) {
-      setStatus(
-        "Chart library not found. Check index.html.",
-        "error"
-      );
-      return;
-    }
-    const library = window.LightweightCharts;
-    const priceElement = getElement(
-      "priceChart",
-      "mainChart",
-      "candlestickChart",
-      "chart"
-    );
-    const rsiElement = getElement(
-      "rsiChart",
-      "rsiGraph"
-    );
-    const layout = {
-      background: { color: "transparent" },
-      textColor: CONFIG.colors.text,
-      fontFamily:
-        "system-ui, -apple-system, BlinkMacSystemFont, sans-serif"
-    };
-    const grid = {
-      vertLines: { color: CONFIG.colors.grid },
-      horzLines: { color: CONFIG.colors.grid }
-    };
-    const commonOptions = {
-      layout,
-      grid,
+      },
+
       rightPriceScale: {
         borderColor: CONFIG.colors.grid
       },
+
       timeScale: {
         borderColor: CONFIG.colors.grid,
         timeVisible: true,
-        secondsVisible: false,
-        rightOffset: 3,
-        barSpacing: 7,
-        minBarSpacing: 2
+        secondsVisible: false
       },
+
       crosshair: {
-        mode: library.CrosshairMode?.Normal ?? 0
+        vertLine: {
+          color: "#64748b",
+          width: 1,
+          style: 2,
+          labelBackgroundColor: "#334155"
+        },
+        horzLine: {
+          color: "#64748b",
+          width: 1,
+          style: 2,
+          labelBackgroundColor: "#334155"
+        }
       },
+
       handleScroll: {
         mouseWheel: true,
         pressedMouseMove: true,
         horzTouchDrag: true,
         vertTouchDrag: false
       },
+
       handleScale: {
         axisPressedMouseMove: true,
         mouseWheel: true,
         pinch: true
       },
-      localization: {
-        locale: "en-IN"
-      }
-    };
-    if (priceElement && !state.priceChart) {
-      state.priceChart = library.createChart(
-        priceElement,
+
+      ...options
+    });
+  }
+
+  function addCandlestickSeries(chart) {
+    /*
+      Lightweight Charts 4.x uses addCandlestickSeries().
+      The fallback also supports the newer addSeries API.
+    */
+    if (typeof chart.addCandlestickSeries === "function") {
+      return chart.addCandlestickSeries({
+        upColor: CONFIG.colors.bullish,
+        downColor: CONFIG.colors.bearish,
+        borderUpColor: CONFIG.colors.bullish,
+        borderDownColor: CONFIG.colors.bearish,
+        wickUpColor: CONFIG.colors.bullish,
+        wickDownColor: CONFIG.colors.bearish
+      });
+    }
+
+    if (
+      window.LightweightCharts &&
+      typeof chart.addSeries === "function" &&
+      LightweightCharts.CandlestickSeries
+    ) {
+      return chart.addSeries(
+        LightweightCharts.CandlestickSeries,
         {
-          ...commonOptions,
-          width: Math.max(
-            280,
-            priceElement.clientWidth || 320
-          ),
-          height: Math.max(
-            260,
-            Math.min(
-              420,
-              priceElement.clientHeight || 320
-            )
-          ),
-          rightPriceScale: {
-            borderColor: CONFIG.colors.grid,
-            scaleMargins: {
-              top: 0.08,
-              bottom: 0.25
-            }
-          }
-        }
-      );
-      state.candleSeries =
-        state.priceChart.addCandlestickSeries({
           upColor: CONFIG.colors.bullish,
           downColor: CONFIG.colors.bearish,
           borderUpColor: CONFIG.colors.bullish,
           borderDownColor: CONFIG.colors.bearish,
           wickUpColor: CONFIG.colors.bullish,
-          wickDownColor: CONFIG.colors.bearish,
-          priceLineVisible: true,
-          lastValueVisible: true
-        });
-      state.sma20Series =
-        state.priceChart.addLineSeries({
-          color: CONFIG.colors.sma20,
-          lineWidth: 1,
-          title: "SMA 20",
-          priceLineVisible: false,
-          lastValueVisible: false
-        });
-      state.sma50Series =
-        state.priceChart.addLineSeries({
-          color: CONFIG.colors.sma50,
-          lineWidth: 1,
-          title: "SMA 50",
-          priceLineVisible: false,
-          lastValueVisible: false
-        });
-      state.sma100Series =
-        state.priceChart.addLineSeries({
-          color: CONFIG.colors.sma100,
-          lineWidth: 1,
-          title: "SMA 100",
-          priceLineVisible: false,
-          lastValueVisible: false
-        });
-      state.volumeSeries =
-        state.priceChart.addHistogramSeries({
-          priceFormat: { type: "volume" },
-          priceScaleId: "",
-          lastValueVisible: false,
-          priceLineVisible: false
-        });
-      state.volumeSeries.priceScale().applyOptions({
-        scaleMargins: {
-          top: 0.82,
-          bottom: 0
-        }
-      });
-    }
-    if (rsiElement && !state.rsiChart) {
-      state.rsiChart = library.createChart(
-        rsiElement,
-        {
-          ...commonOptions,
-          width: Math.max(
-            280,
-            rsiElement.clientWidth || 320
-          ),
-          height: Math.max(
-            110,
-            Math.min(
-              180,
-              rsiElement.clientHeight || 140
-            )
-          ),
-          rightPriceScale: {
-            borderColor: CONFIG.colors.grid,
-            scaleMargins: {
-              top: 0.1,
-              bottom: 0.1
-            }
-          },
-          timeScale: {
-            ...commonOptions.timeScale,
-            visible: false
-          }
+          wickDownColor: CONFIG.colors.bearish
         }
       );
-      state.rsiSeries =
-        state.rsiChart.addLineSeries({
-          color: CONFIG.colors.rsi,
-          lineWidth: 2,
-          title: "RSI 14",
-          priceLineVisible: false,
-          lastValueVisible: true,
-          autoscaleInfoProvider: () => ({
-            priceRange: {
-              minValue: 0,
-              maxValue: 100
-            }
-          })
-        });
-      // Add the RSI 30/70 guide lines only once.
-      state.rsiSeries.createPriceLine({
-        price: 30,
-        color: "rgba(239,68,68,0.65)",
-        lineWidth: 1,
-        lineStyle: library.LineStyle?.Dashed ?? 2,
-        axisLabelVisible: true,
-        title: "30"
-      });
-      state.rsiSeries.createPriceLine({
-        price: 70,
-        color: "rgba(34,197,94,0.65)",
-        lineWidth: 1,
-        lineStyle: library.LineStyle?.Dashed ?? 2,
-        axisLabelVisible: true,
-        title: "70"
-      });
     }
-    // Keep the price and RSI charts synchronized.
-    if (
-      state.priceChart &&
-      state.rsiChart &&
-      !state.chartsSynchronized
-    ) {
-      state.priceChart.timeScale()
-        .subscribeVisibleLogicalRangeChange(range => {
-          if (!range) return;
-          try {
-            state.rsiChart.timeScale()
-              .setVisibleLogicalRange(range);
-          } catch (_) {}
-        });
-      state.rsiChart.timeScale()
-        .subscribeVisibleLogicalRangeChange(range => {
-          if (!range) return;
-          try {
-            state.priceChart.timeScale()
-              .setVisibleLogicalRange(range);
-          } catch (_) {}
-        });
-      state.chartsSynchronized = true;
-    }
-    setupChartResize();
+
+    return null;
   }
+
+  function addLineSeries(chart, color, title) {
+    const options = {
+      color,
+      lineWidth: 2,
+      title,
+      priceLineVisible: false,
+      lastValueVisible: true
+    };
+
+    if (typeof chart.addLineSeries === "function") {
+      return chart.addLineSeries(options);
+    }
+
+    if (
+      window.LightweightCharts &&
+      typeof chart.addSeries === "function" &&
+      LightweightCharts.LineSeries
+    ) {
+      return chart.addSeries(
+        LightweightCharts.LineSeries,
+        options
+      );
+    }
+
+    return null;
+  }
+
+  function addHistogramSeries(chart) {
+    if (typeof chart.addHistogramSeries === "function") {
+      return chart.addHistogramSeries({
+        priceFormat: {
+          type: "volume"
+        },
+        priceScaleId: ""
+      });
+    }
+
+    if (
+      window.LightweightCharts &&
+      typeof chart.addSeries === "function" &&
+      LightweightCharts.HistogramSeries
+    ) {
+      return chart.addSeries(
+        LightweightCharts.HistogramSeries,
+        {
+          priceFormat: {
+            type: "volume"
+          },
+          priceScaleId: ""
+        }
+      );
+    }
+
+    return null;
+  }
+
+  /* ============================================================
+     PRICE ACTION
+     ============================================================ */
+
+  function renderPriceAction() {
+    const data = getCurrentData();
+
+    const indexData = getIndex(
+      state.selectedIndex,
+      data
+    );
+
+    const timeframe = state.selectedTimeframe;
+
+    const rawCandles = getCandles(
+      indexData,
+      timeframe
+    );
+
+    const candles = normalizeCandles(rawCandles);
+
+    const chartContainer = findContainer([
+      "priceChart",
+      "candlestickChart",
+      "mainChart",
+      "chartContainer"
+    ]);
+
+    if (!chartContainer) {
+      console.warn(
+        "Price chart container not found. " +
+        "Expected priceChart, candlestickChart, " +
+        "mainChart or chartContainer."
+      );
+
+      return;
+    }
+
+    if (!candles.length) {
+      chartContainer.innerHTML = `
+        <div class="loading-card">
+          No candlestick data is available for
+          ${escapeHtml(state.selectedIndex)}
+          (${escapeHtml(timeframe)}).
+        </div>
+      `;
+
+      removeChart(state.priceChart);
+      removeChart(state.volumeChart);
+      removeChart(state.rsiChart);
+
+      state.priceChart = null;
+      state.volumeChart = null;
+      state.rsiChart = null;
+
+      return;
+    }
+
+    chartContainer.innerHTML = "";
+
+    removeChart(state.priceChart);
+
+    state.priceChart = createChart(
+      chartContainer,
+      {
+        height: window.innerWidth < 600 ? 280 : 360
+      }
+    );
+
+    if (!state.priceChart) return;
+
+    state.candleSeries = addCandlestickSeries(
+      state.priceChart
+    );
+
+    if (!state.candleSeries) {
+      chartContainer.innerHTML = `
+        <div class="loading-card">
+          Unable to initialize the candlestick chart.
+        </div>
+      `;
+
+      return;
+    }
+
+    state.candleSeries.setData(
+      candles.map(c => ({
+        time: c.time,
+        open: c.open,
+        high: c.high,
+        low: c.low,
+        close: c.close
+      }))
+    );
+
+    const sma20 = getSMAValues(candles, 20);
+    const sma50 = getSMAValues(candles, 50);
+    const sma100 = getSMAValues(candles, 100);
+
+    state.sma20Series = addLineSeries(
+      state.priceChart,
+      CONFIG.colors.sma20,
+      "SMA 20"
+    );
+
+    state.sma50Series = addLineSeries(
+      state.priceChart,
+      CONFIG.colors.sma50,
+      "SMA 50"
+    );
+
+    state.sma100Series = addLineSeries(
+      state.priceChart,
+      CONFIG.colors.sma100,
+      "SMA 100"
+    );
+
+    if (state.sma20Series) {
+      state.sma20Series.setData(sma20);
+    }
+
+    if (state.sma50Series) {
+      state.sma50Series.setData(sma50);
+    }
+
+    if (state.sma100Series) {
+      state.sma100Series.setData(sma100);
+    }
+
+    state.priceChart.timeScale().fitContent();
+
+    renderChartSummary(candles, sma20, sma50, sma100);
+
+    renderVolumeChart(candles);
+    renderRSIChart(candles);
+
+    setTimeout(() => {
+      if (!state.priceChart) return;
+
+      const width = chartContainer.clientWidth;
+
+      if (width > 0) {
+        state.priceChart.applyOptions({
+          width
+        });
+      }
+    }, 100);
+  }
+
+  function renderChartSummary(candles, sma20, sma50, sma100) {
+    const latest = candles[candles.length - 1];
+
+    const previous = candles.length > 1
+      ? candles[candles.length - 2]
+      : null;
+
+    const change = previous
+      ? ((latest.close - previous.close) / previous.close) * 100
+      : null;
+
+    setText("chartIndexName", state.selectedIndex);
+    setText("chartTimeframe", state.selectedTimeframe);
+    setText("chartLastPrice", fmt(latest.close));
+    setText("chartChange", signed(change, 2, "%"));
+    setText("chartHigh", fmt(latest.high));
+    setText("chartLow", fmt(latest.low));
+
+    setText(
+      "chartSMA20",
+      sma20.length ? fmt(sma20[sma20.length - 1].value) : "—"
+    );
+
+    setText(
+      "chartSMA50",
+      sma50.length ? fmt(sma50[sma50.length - 1].value) : "—"
+    );
+
+    setText(
+      "chartSMA100",
+      sma100.length ? fmt(sma100[sma100.length - 1].value) : "—"
+    );
+  }
+
+  /* ============================================================
+     VOLUME CHART
+     ============================================================ */
+
+  function renderVolumeChart(candles) {
+    const container = findContainer([
+      "volumeChart",
+      "volumeChartContainer"
+    ]);
+
+    if (!container) return;
+
+    removeChart(state.volumeChart);
+    state.volumeChart = null;
+
+    const volumes = getVolumeValues(candles);
+
+    if (!volumes.length) {
+      container.innerHTML = `
+        <div class="loading-card">
+          Volume data is unavailable.
+        </div>
+      `;
+
+      return;
+    }
+
+    container.innerHTML = "";
+
+    state.volumeChart = createChart(
+      container,
+      {
+        height: 130,
+        timeScale: {
+          visible: false,
+          borderColor: CONFIG.colors.grid
+        }
+      }
+    );
+
+    if (!state.volumeChart) return;
+
+    state.volumeSeries = addHistogramSeries(
+      state.volumeChart
+    );
+
+    if (!state.volumeSeries) return;
+
+    state.volumeSeries.setData(volumes);
+
+    state.volumeChart.timeScale().fitContent();
+  }
+
+  /* ============================================================
+     RSI CHART
+     ============================================================ */
+
+  function renderRSIChart(candles) {
+    const container = findContainer([
+      "rsiChart",
+      "rsiChartContainer"
+    ]);
+
+    if (!container) return;
+
+    removeChart(state.rsiChart);
+    state.rsiChart = null;
+
+    const rsi = getRSIValues(candles, 14);
+
+    if (!rsi.length) {
+      container.innerHTML = `
+        <div class="loading-card">
+          RSI requires at least 15 candles.
+        </div>
+      `;
+
+      return;
+    }
+
+    container.innerHTML = "";
+
+    state.rsiChart = createChart(
+      container,
+      {
+        height: 150,
+        rightPriceScale: {
+          borderColor: CONFIG.colors.grid,
+          scaleMargins: {
+            top: 0.1,
+            bottom: 0.1
+          }
+        }
+      }
+    );
+
+    if (!state.rsiChart) return;
+
+    state.rsiSeries = addLineSeries(
+      state.rsiChart,
+      CONFIG.colors.rsi,
+      "RSI 14"
+    );
+
+    if (!state.rsiSeries) return;
+
+    state.rsiSeries.setData(rsi);
+
+    state.rsiChart.timeScale().fitContent();
+
+    const latestRSI = rsi[rsi.length - 1].value;
+
+    let label = "Neutral";
+
+    if (latestRSI >= 70) {
+      label = "Overbought";
+    } else if (latestRSI <= 30) {
+      label = "Oversold";
+    }
+
+    setText("rsiValue", fmt(latestRSI, 1));
+    setText("rsiSignal", label);
+  }
+
+  /* ============================================================
+     INDEX AND TIMEFRAME SELECTORS
+     ============================================================ */
+
+  function bindSelectors() {
+    const indexSelectors = [
+      "indexSelector",
+      "indexSelect",
+      "marketSelector"
+    ];
+
+    const timeframeSelectors = [
+      "timeframeSelector",
+      "timeframeSelect",
+      "chartTimeframeSelector"
+    ];
+
+    for (const id of indexSelectors) {
+      const node = el(id);
+
+      if (!node || node.dataset.bound === "true") continue;
+
+      node.dataset.bound = "true";
+
+      node.addEventListener("change", event => {
+        const value = event.target.value;
+
+        if (value) {
+          state.selectedIndex = value;
+          renderPriceAction();
+          renderTrendAnalysis();
+        }
+      });
+    }
+
+    for (const id of timeframeSelectors) {
+      const node = el(id);
+
+      if (!node || node.dataset.bound === "true") continue;
+
+      node.dataset.bound = "true";
+
+      node.addEventListener("change", event => {
+        const value = event.target.value;
+
+        if (value) {
+          state.selectedTimeframe = value;
+          renderPriceAction();
+          renderTrendAnalysis();
+        }
+      });
+    }
+  }
+
+  /* ============================================================
+     TREND ANALYSIS
+     ============================================================ */
+
+  function renderTrendAnalysis() {
+    const data = getCurrentData();
+
+    const indexData = getIndex(
+      state.selectedIndex,
+      data
+    );
+
+    const frame = getTimeframe(
+      indexData,
+      state.selectedTimeframe
+    );
+
+    const technical = getTechnicalData(
+      indexData,
+      state.selectedTimeframe
+    );
+
+    const candles = normalizeCandles(
+      getCandles(indexData, state.selectedTimeframe)
+    );
+
+    const last = candles.length
+      ? candles[candles.length - 1]
+      : null;
+
+    const sma20 = number(first(
+      technical.sma20,
+      technical.sma_20,
+      technical.SMA20,
+      technical.SMA_20
+    ));
+
+    const sma50 = number(first(
+      technical.sma50,
+      technical.sma_50,
+      technical.SMA50,
+      technical.SMA_50
+    ));
+
+    const sma100 = number(first(
+      technical.sma100,
+      technical.sma_100,
+      technical.SMA100,
+      technical.SMA_100
+    ));
+
+    const rsi = number(first(
+      technical.rsi,
+      technical.RSI,
+      technical.rsi14,
+      technical.rsi_14
+    ));
+
+    const price = number(first(
+      frame.close,
+      frame.price,
+      last ? last.close : null,
+      indexData.close,
+      indexData.price
+    ));
+
+    const calculatedSMA20 = candles.length >= 20
+      ? getSMAValues(candles, 20).slice(-1)[0]?.value
+      : null;
+
+    const calculatedSMA50 = candles.length >= 50
+      ? getSMAValues(candles, 50).slice(-1)[0]?.value
+      : null;
+
+    const calculatedSMA100 = candles.length >= 100
+      ? getSMAValues(candles, 100).slice(-1)[0]?.value
+      : null;
+
+    const finalSMA20 = sma20 ?? calculatedSMA20;
+    const finalSMA50 = sma50 ?? calculatedSMA50;
+    const finalSMA100 = sma100 ?? calculatedSMA100;
+
+    const finalRSI = rsi ??
+      (
+        candles.length > 14
+          ? getRSIValues(candles).slice(-1)[0]?.value
+          : null
+      );
+
+    const smaSignal = (average, label) => {
+      if (price === null || average === null || average === undefined) {
+        return {
+          value: "Unavailable",
+          type: "neutral",
+          detail: `${label} data unavailable`
+        };
+      }
+
+      const bullish = price > average;
+
+      return {
+        value: bullish ? "Bullish" : "Bearish",
+        type: bullish ? "bullish" : "bearish",
+        detail: `Price ${bullish ? "above" : "below"} ${label}`
+      };
+    };
+
+    const cards = [
+      {
+        title: "Current Price",
+        value: fmt(price),
+        type: "neutral",
+        detail: state.selectedIndex
+      },
+      {
+        title: "SMA 20",
+        value: fmt(finalSMA20),
+        ...smaSignal(finalSMA20, "SMA 20")
+      },
+      {
+        title: "SMA 50",
+        value: fmt(finalSMA50),
+        ...smaSignal(finalSMA50, "SMA 50")
+      },
+      {
+        title: "SMA 100",
+        value: fmt(finalSMA100),
+        ...smaSignal(finalSMA100, "SMA 100")
+      },
+      {
+        title: "RSI 14",
+        value: finalRSI === null || finalRSI === undefined
+          ? "—"
+          : fmt(finalRSI, 1),
+        type: finalRSI >= 70
+          ? "bearish"
+          : finalRSI <= 30
+            ? "bullish"
+            : "neutral",
+        detail: finalRSI >= 70
+          ? "Overbought zone"
+          : finalRSI <= 30
+            ? "Oversold zone"
+            : "Momentum indicator"
+      }
+    ];
+
+    const html = cards.map(card => `
+      <article class="panel technical-card">
+        <div class="technical-title">
+          ${escapeHtml(card.title)}
+        </div>
+
+        <div class="technical-value ${card.type}">
+          ${escapeHtml(card.value)}
+        </div>
+
+        <div class="technical-detail">
+          ${escapeHtml(card.detail || "")}
+        </div>
+      </article>
+    `).join("");
+
+    renderInto(
+      [
+        "technicalCards",
+        "trendCards",
+        "trendAnalysis",
+        "technicalIndicators"
+      ],
+      html,
+      "Technical indicators are not available."
+    );
+  }
+
+  /* ============================================================
+     OPTIONS INTELLIGENCE
+     ============================================================ */
+
+  function getOptionsData(data = getCurrentData()) {
+    return first(
+      data.options,
+      data.option_chain,
+      data.optionChain,
+      data.options_data,
+      data.options_intelligence,
+      {}
+    );
+  }
+
+  function renderOptions() {
+    const options = getOptionsData();
+
+    const pcr = number(first(
+      options.pcr,
+      options.put_call_ratio,
+      options.putCallRatio
+    ));
+
+    const callOI = number(first(
+      options.call_oi,
+      options.callOI,
+      options.total_call_oi
+    ));
+
+    const putOI = number(first(
+      options.put_oi,
+      options.putOI,
+      options.total_put_oi
+    ));
+
+    const maxPain = first(
+      options.max_pain,
+      options.maxPain,
+      options.max_pain_strike
+    );
+
+    const support = first(
+      options.support,
+      options.support_level,
+      options.support_levels
+    );
+
+    const resistance = first(
+      options.resistance,
+      options.resistance_level,
+      options.resistance_levels
+    );
+
+    const oiChange = first(
+      options.oi_change,
+      options.oiChange,
+      options.change_in_oi
+    );
+
+    const optionCards = [
+      {
+        title: "Put/Call Ratio",
+        value: pcr === null ? "—" : fmt(pcr, 2),
+        detail: pcr === null
+          ? "PCR unavailable"
+          : pcr > 1
+            ? "Put OI exceeds Call OI"
+            : pcr < 1
+              ? "Call OI exceeds Put OI"
+              : "Put/Call OI balanced",
+        type: pcr === null
+          ? "neutral"
+          : pcr > 1
+            ? "bullish"
+            : pcr < 1
+              ? "bearish"
+              : "neutral"
+      },
+      {
+        title: "Call Open Interest",
+        value: callOI === null ? "—" : compact(callOI),
+        detail: "Reported Call OI",
+        type: "bearish"
+      },
+      {
+        title: "Put Open Interest",
+        value: putOI === null ? "—" : compact(putOI),
+        detail: "Reported Put OI",
+        type: "bullish"
+      },
+      {
+        title: "Max Pain",
+        value: maxPain === undefined ? "—" : fmt(maxPain, 0),
+        detail: "Reported maximum-pain level",
+        type: "neutral"
+      },
+      {
+        title: "Support",
+        value: Array.isArray(support)
+          ? support.map(v => fmt(v, 0)).join(", ")
+          : support === undefined
+            ? "—"
+            : fmt(support, 0),
+        detail: "Reported support level(s)",
+        type: "bullish"
+      },
+      {
+        title: "Resistance",
+        value: Array.isArray(resistance)
+          ? resistance.map(v => fmt(v, 0)).join(", ")
+          : resistance === undefined
+            ? "—"
+            : fmt(resistance, 0),
+        detail: "Reported resistance level(s)",
+        type: "bearish"
+      }
+    ];
+
+    const html = optionCards.map(card => `
+      <article class="panel option-card">
+        <div class="option-title">
+          ${escapeHtml(card.title)}
+        </div>
+
+        <div class="option-value ${card.type}">
+          ${escapeHtml(card.value)}
+        </div>
+
+        <div class="option-detail">
+          ${escapeHtml(card.detail)}
+        </div>
+      </article>
+    `).join("");
+
+    const hasOptions = [
+      pcr,
+      callOI,
+      putOI,
+      number(maxPain),
+      number(support),
+      number(resistance)
+    ].some(value => value !== null);
+
+    renderInto(
+      [
+        "optionsCards",
+        "optionsGrid",
+        "optionsIntelligence",
+        "optionCards"
+      ],
+      hasOptions ? html : "",
+      "Options data is unavailable in the latest snapshot."
+    );
+
+    setText(
+      "optionsPCR",
+      pcr === null ? "—" : fmt(pcr, 2)
+    );
+
+    setText(
+      "optionsCallOI",
+      callOI === null ? "—" : compact(callOI)
+    );
+
+    setText(
+      "optionsPutOI",
+      putOI === null ? "—" : compact(putOI)
+    );
+
+    setText(
+      "optionsMaxPain",
+      maxPain === undefined ? "—" : fmt(maxPain, 0)
+    );
+
+    setText(
+      "optionsOIChange",
+      oiChange === undefined ? "—" : JSON.stringify(oiChange)
+    );
+  }
+
+  /* ============================================================
+     INTERNATIONAL PULSE
+     ============================================================ */
+
+  function getGlobalData(data = getCurrentData()) {
+    return first(
+      data.global_markets,
+      data.globalMarkets,
+      data.global_indices,
+      data.global,
+      data.international_markets,
+      {}
+    );
+  }
+
+  function renderGlobalMarkets() {
+    const global = getGlobalData();
+
+    let entries = [];
+
+    if (Array.isArray(global)) {
+      entries = global.map((item, index) => [
+        first(item.name, item.symbol, item.ticker, `Market ${index + 1}`),
+        item
+      ]);
+    } else if (global && typeof global === "object") {
+      entries = Object.entries(global);
+    }
+
+    const html = entries.map(([name, item]) => {
+      if (!item || typeof item !== "object") {
+        return "";
+      }
+
+      const price = first(
+        item.price,
+        item.close,
+        item.last,
+        item.value
+      );
+
+      const change = number(first(
+        item.change_pct,
+        item.changePercent,
+        item.percent_change,
+        item.chg,
+        item.change
+      ));
+
+      const direction = sentiment(change);
+
+      return `
+        <article class="panel global-card">
+          <div class="global-card-top">
+            <span class="global-name">
+              ${escapeHtml(name)}
+            </span>
+
+            ${badge(
+              direction === "bullish"
+                ? "Positive"
+                : direction === "bearish"
+                  ? "Negative"
+                  : "Neutral",
+              direction
+            )}
+          </div>
+
+          <div class="global-price">
+            ${fmt(price)}
+          </div>
+
+          <div class="global-change ${direction}">
+            ${signed(change, 2, "%")}
+          </div>
+        </article>
+      `;
+    }).filter(Boolean);
+
+    renderInto(
+      [
+        "globalCards",
+        "globalMarkets",
+        "internationalCards",
+        "internationalPulse"
+      ],
+      html.join(""),
+      "Global-market data is unavailable."
+    );
+  }
+
+  /* ============================================================
+     SEVEN-SESSION TREND
+     ============================================================ */
+
+  function getHistoryEntries() {
+    const history = state.history;
+
+    if (Array.isArray(history)) {
+      return history;
+    }
+
+    if (history && typeof history === "object") {
+      const entries = first(
+        history.history,
+        history.snapshots,
+        history.items,
+        history.data
+      );
+
+      if (Array.isArray(entries)) return entries;
+
+      return Object.values(history);
+    }
+
+    return [];
+  }
+
+  function historyEntryDate(item) {
+    return first(
+      item.generated_at_ist,
+      item.generated_at,
+      item.timestamp,
+      item.date,
+      item.updated_at
+    );
+  }
+
+  function renderWeeklyTrend() {
+    const entries = getHistoryEntries();
+
+    const unique = new Map();
+
+    for (const item of entries) {
+      if (!item || typeof item !== "object") continue;
+
+      const date = historyEntryDate(item);
+
+      if (date) unique.set(String(date), item);
+    }
+
+    const snapshots = Array.from(unique.values())
+      .sort((a, b) => {
+        return new Date(historyEntryDate(a)) -
+          new Date(historyEntryDate(b));
+      })
+      .slice(-7);
+
+    if (
+      state.latest &&
+      !snapshots.some(item =>
+        historyEntryDate(item) === timestamp(state.latest)
+      )
+    ) {
+      snapshots.push(state.latest);
+    }
+
+    const rows = snapshots.slice(-7).map(item => {
+      const overall = first(item.overall, {});
+
+      const score = number(overall.score);
+
+      const date = historyEntryDate(item);
+
+      return {
+        date,
+        score,
+        label: first(overall.label, "Unavailable")
+      };
+    });
+
+    const html = rows.map(row => {
+      const date = row.date
+        ? new Date(row.date).toLocaleDateString("en-IN", {
+            timeZone: "Asia/Kolkata",
+            day: "2-digit",
+            month: "short"
+          })
+        : "—";
+
+      const type = row.score === null
+        ? "neutral"
+        : row.score > 0
+          ? "bullish"
+          : row.score < 0
+            ? "bearish"
+            : "neutral";
+
+      return `
+        <article class="panel weekly-card">
+          <div class="weekly-date">
+            ${escapeHtml(date)}
+          </div>
+
+          <div class="weekly-score ${type}">
+            ${row.score === null ? "—" : fmt(row.score, 1)}
+          </div>
+
+          <div class="weekly-label">
+            ${escapeHtml(row.label)}
+          </div>
+        </article>
+      `;
+    }).join("");
+
+    renderInto(
+      [
+        "weeklyCards",
+        "weeklyTrend",
+        "sevenSessionTrend",
+        "historyCards"
+      ],
+      html,
+      "Historical snapshots are not available yet."
+    );
+  }
+
+  /* ============================================================
+     SCORE BREAKDOWN
+     ============================================================ */
+
+  function getScoreBreakdown(data = getCurrentData()) {
+    return first(
+      data.score_breakdown,
+      data.scoreBreakdown,
+      data.score_components,
+      data.components,
+      data.factors,
+      {}
+    );
+  }
+
+  function renderScoreBreakdown() {
+    const breakdown = getScoreBreakdown();
+
+    let entries = [];
+
+    if (Array.isArray(breakdown)) {
+      entries = breakdown.map((item, index) => [
+        first(item.name, item.label, `Factor ${index + 1}`),
+        item
+      ]);
+    } else if (
+      breakdown &&
+      typeof breakdown === "object"
+    ) {
+      entries = Object.entries(breakdown);
+    }
+
+    const html = entries.map(([name, item]) => {
+      const value = typeof item === "object" && item !== null
+        ? number(first(
+            item.score,
+            item.value,
+            item.weighted_score,
+            item.contribution
+          ))
+        : number(item);
+
+      const description =
+        typeof item === "object" && item !== null
+          ? first(item.description, item.signal, item.label, "")
+          : "";
+
+      const type = value === null
+        ? "neutral"
+        : value > 0
+          ? "bullish"
+          : value < 0
+            ? "bearish"
+            : "neutral";
+
+      const width = value === null
+        ? 0
+        : Math.min(100, Math.abs(value));
+
+      return `
+        <article class="panel score-card">
+          <div class="score-card-header">
+            <span class="score-name">
+              ${escapeHtml(name)}
+            </span>
+
+            <span class="score-value ${type}">
+              ${value === null ? "—" : signed(value, 2)}
+            </span>
+          </div>
+
+          <div class="score-bar">
+            <div
+              class="score-bar-fill ${type}"
+              style="width:${width}%"
+            ></div>
+          </div>
+
+          <div class="score-description">
+            ${escapeHtml(description)}
+          </div>
+        </article>
+      `;
+    }).join("");
+
+    renderInto(
+      [
+        "scoreBreakdown",
+        "scoreBreakdownCards",
+        "factorCards",
+        "scoreCards"
+      ],
+      html,
+      "Score breakdown is unavailable in the latest snapshot."
+    );
+  }
+
+  /* ============================================================
+     END OF PART 2
+     PART 3 CONTINUES WITH NEWS, REFRESH,
+     INITIALIZATION AND ERROR HANDLING.
+     ============================================================ */
+  /* ============================================================
+     NEWS AND MARKET SENTIMENT
+     ============================================================ */
+
+  function getNewsData(data = getCurrentData()) {
+    return first(
+      data.news,
+      data.news_items,
+      data.newsItems,
+      data.headlines,
+      data.market_news,
+      data.sentiment_data,
+      []
+    );
+  }
+
+  function renderNews() {
+    const data = getCurrentData();
+    const news = getNewsData(data);
+
+    let entries = [];
+
+    if (Array.isArray(news)) {
+      entries = news;
+    } else if (news && typeof news === "object") {
+      const items = first(
+        news.items,
+        news.articles,
+        news.headlines,
+        news.results
+      );
+
+      if (Array.isArray(items)) {
+        entries = items;
+      } else {
+        entries = Object.values(news).filter(
+          item => item && typeof item === "object"
+        );
+      }
+    }
+
+    const html = entries.map(item => {
+      if (!item || typeof item !== "object") {
+        return "";
+      }
+
+      const title = first(
+        item.title,
+        item.headline,
+        item.name,
+        "Untitled news item"
+      );
+
+      const summary = first(
+        item.summary,
+        item.description,
+        item.snippet,
+        item.content,
+        ""
+      );
+
+      const source = first(
+        item.source,
+        item.publisher,
+        item.domain,
+        "News"
+      );
+
+      const published = first(
+        item.published,
+        item.published_at,
+        item.publishedAt,
+        item.date,
+        item.timestamp
+      );
+
+      const url = first(
+        item.url,
+        item.link,
+        item.article_url,
+        ""
+      );
+
+      const score = number(first(
+        item.sentiment_score,
+        item.sentimentScore,
+        item.score
+      ));
+
+      const sentimentLabel = first(
+        item.sentiment,
+        item.label,
+        score === null
+          ? "Neutral"
+          : score > 0.05
+            ? "Positive"
+            : score < -0.05
+              ? "Negative"
+              : "Neutral"
+      );
+
+      const sentimentType = sentiment(score);
+
+      const safeUrl = isSafeExternalUrl(url)
+        ? url
+        : "";
+
+      const titleHtml = safeUrl
+        ? `<a href="${escapeHtml(safeUrl)}"
+              target="_blank"
+              rel="noopener noreferrer">
+              ${escapeHtml(title)}
+           </a>`
+        : escapeHtml(title);
+
+      return `
+        <article class="panel news-card">
+          <div class="news-card-header">
+            <span class="news-source">
+              ${escapeHtml(source)}
+            </span>
+
+            ${badge(
+              sentimentLabel,
+              sentimentType
+            )}
+          </div>
+
+          <h3 class="news-title">
+            ${titleHtml}
+          </h3>
+
+          ${
+            summary
+              ? `<p class="news-summary">
+                   ${escapeHtml(summary)}
+                 </p>`
+              : ""
+          }
+
+          <div class="news-footer">
+            <span>${escapeHtml(formatShortDate(published))}</span>
+
+            ${
+              safeUrl
+                ? `<a href="${escapeHtml(safeUrl)}"
+                     target="_blank"
+                     rel="noopener noreferrer">
+                     Read article ↗
+                   </a>`
+                : ""
+            }
+          </div>
+        </article>
+      `;
+    }).filter(Boolean);
+
+    renderInto(
+      [
+        "newsCards",
+        "newsContainer",
+        "newsFeed",
+        "newsSentiment",
+        "newsGrid"
+      ],
+      html.join(""),
+      "No news articles are available in this snapshot."
+    );
+
+    renderNewsSummary(news);
+  }
+
+  function isSafeExternalUrl(value) {
+    if (!value || typeof value !== "string") {
+      return false;
+    }
+
+    try {
+      const url = new URL(value, window.location.href);
+
+      return (
+        url.protocol === "https:" ||
+        url.protocol === "http:"
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  function formatShortDate(value) {
+    if (!value) return "Date unavailable";
+
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+      return String(value);
+    }
+
+    return date.toLocaleString("en-IN", {
+      timeZone: "Asia/Kolkata",
+      day: "2-digit",
+      month: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true
+    });
+  }
+
+  function renderNewsSummary(news) {
+    let entries = [];
+
+    if (Array.isArray(news)) {
+      entries = news;
+    } else if (news && typeof news === "object") {
+      entries = first(
+        news.items,
+        news.articles,
+        news.headlines,
+        news.results,
+        []
+      );
+
+      if (!Array.isArray(entries)) {
+        entries = [];
+      }
+    }
+
+    const scores = entries
+      .map(item => number(first(
+        item.sentiment_score,
+        item.sentimentScore,
+        item.score
+      )))
+      .filter(value => value !== null);
+
+    const average = scores.length
+      ? scores.reduce((sum, value) => sum + value, 0) /
+        scores.length
+      : null;
+
+    let label = "Unavailable";
+
+    if (average !== null) {
+      label = average > 0.05
+        ? "Positive"
+        : average < -0.05
+          ? "Negative"
+          : "Neutral";
+    }
+
+    setText("newsSentimentValue", label);
+    setText("newsCount", entries.length);
+
+    setText(
+      "newsAverageScore",
+      average === null ? "—" : fmt(average, 3)
+    );
+  }
+
+  /* ============================================================
+     SNAPSHOT SELECTOR
+     ============================================================ */
+
+  function bindSnapshotSelector() {
+    const selectors = [
+      "snapshotSelector",
+      "historySelector",
+      "analysisSelector"
+    ];
+
+    selectors.forEach(id => {
+      const node = el(id);
+
+      if (!node || node.dataset.bound === "true") {
+        return;
+      }
+
+      node.dataset.bound = "true";
+
+      node.addEventListener("change", event => {
+        const value = event.target.value;
+
+        if (!value || value === "latest") {
+          state.selectedSnapshot = null;
+        } else {
+          const entries = getHistoryEntries();
+
+          state.selectedSnapshot = entries.find(item => {
+            return String(historyEntryDate(item)) ===
+              String(value);
+          }) || null;
+        }
+
+        renderAll();
+      });
+    });
+  }
+
+  function populateSnapshotSelector() {
+    const selectors = [
+      "snapshotSelector",
+      "historySelector",
+      "analysisSelector"
+    ];
+
+    const entries = getHistoryEntries()
+      .filter(item => historyEntryDate(item))
+      .sort((a, b) => {
+        return new Date(historyEntryDate(b)) -
+          new Date(historyEntryDate(a));
+      });
+
+    selectors.forEach(id => {
+      const node = el(id);
+
+      if (!node || node.tagName !== "SELECT") {
+        return;
+      }
+
+      const existingValue = node.value;
+
+      const options = [
+        `<option value="latest">Latest snapshot</option>`,
+        ...entries.map(item => {
+          const date = historyEntryDate(item);
+
+          return `
+            <option value="${escapeHtml(date)}">
+              ${escapeHtml(formatTimestamp(date))}
+            </option>
+          `;
+        })
+      ];
+
+      node.innerHTML = options.join("");
+
+      if (
+        existingValue &&
+        Array.from(node.options).some(
+          option => option.value === existingValue
+        )
+      ) {
+        node.value = existingValue;
+      } else {
+        node.value = "latest";
+      }
+    });
+  }
+
+  /* ============================================================
+     REFRESH BUTTON
+     ============================================================ */
+
+  function bindRefreshButton() {
+    const buttons = [
+      "refreshButton",
+      "refreshBtn",
+      "reloadButton"
+    ];
+
+    buttons.forEach(id => {
+      const button = el(id);
+
+      if (!button || button.dataset.bound === "true") {
+        return;
+      }
+
+      button.dataset.bound = "true";
+
+      button.addEventListener("click", async () => {
+        await loadDashboard(true);
+      });
+    });
+  }
+
   /* ============================================================
      RESPONSIVE CHART RESIZING
      ============================================================ */
-  function getPriceChartElement() {
-    return getElement(
-      "priceChart",
-      "mainChart",
-      "candlestickChart",
-      "chart"
-    );
-  }
-  function getRsiChartElement() {
-    return getElement("rsiChart", "rsiGraph");
-  }
-  function resizeChartElement(element) {
-    if (!element) return;
-    const width = Math.max(
-      280,
-      Math.floor(element.clientWidth || 320)
-    );
-    if (
-      state.priceChart &&
-      element === getPriceChartElement()
-    ) {
-      state.priceChart.applyOptions({
-        width,
-        height: Math.max(
-          260,
-          Math.min(
-            420,
-            element.clientHeight ||
-              (window.innerWidth < 600 ? 300 : 360)
-          )
-        )
-      });
-    }
-    if (
-      state.rsiChart &&
-      element === getRsiChartElement()
-    ) {
-      state.rsiChart.applyOptions({
-        width,
-        height: Math.max(
-          110,
-          Math.min(
-            180,
-            element.clientHeight || 140
-          )
-        )
-      });
-    }
-  }
+
   function resizeCharts() {
-    resizeChartElement(getPriceChartElement());
-    resizeChartElement(getRsiChartElement());
+    const chartPairs = [
+      [state.priceChart, [
+        "priceChart",
+        "candlestickChart",
+        "mainChart",
+        "chartContainer"
+      ]],
+      [state.volumeChart, [
+        "volumeChart",
+        "volumeChartContainer"
+      ]],
+      [state.rsiChart, [
+        "rsiChart",
+        "rsiChartContainer"
+      ]]
+    ];
+
+    chartPairs.forEach(([chart, ids]) => {
+      if (!chart) return;
+
+      const container = findContainer(ids);
+
+      if (!container) return;
+
+      const width = container.clientWidth;
+
+      if (width > 0) {
+        chart.applyOptions({
+          width
+        });
+      }
+    });
   }
-  function setupChartResize() {
+
+  function setupResizeHandling() {
     if (state.resizeObserver) {
       state.resizeObserver.disconnect();
     }
-    if (!("ResizeObserver" in window)) {
+
+    if ("ResizeObserver" in window) {
+      state.resizeObserver = new ResizeObserver(() => {
+        resizeCharts();
+      });
+
+      const containers = [
+        "priceChart",
+        "candlestickChart",
+        "mainChart",
+        "chartContainer",
+        "volumeChart",
+        "volumeChartContainer",
+        "rsiChart",
+        "rsiChartContainer"
+      ];
+
+      const observed = new Set();
+
+      containers.forEach(id => {
+        const node = el(id);
+
+        if (node && !observed.has(node)) {
+          observed.add(node);
+          state.resizeObserver.observe(node);
+        }
+      });
+    } else {
       window.addEventListener(
         "resize",
         resizeCharts,
         { passive: true }
       );
-      return;
     }
-    state.resizeObserver = new ResizeObserver(entries => {
-      entries.forEach(entry => {
-        resizeChartElement(entry.target);
-      });
-    });
-    [
-      getPriceChartElement(),
-      getRsiChartElement()
-    ]
-      .filter(Boolean)
-      .forEach(element => {
-        state.resizeObserver.observe(element);
-      });
   }
+
   /* ============================================================
-     RSI CALCULATION
+     LOAD LATEST AND HISTORICAL DATA
      ============================================================ */
-  function getRSIPoints(frame, candles, period = 14) {
-    const raw = first(
-      frame?.rsi_series,
-      frame?.rsiSeries,
-      frame?.rsi_values,
-      frame?.rsiValues,
-      frame?.rsi_history
-    );
-    if (Array.isArray(raw)) {
-      return raw
-        .map((point, index) => {
-          if (typeof point === "number") {
-            return {
-              time: candles[index]?.time,
-              value: point
-            };
-          }
-          let time = first(
-            point?.time,
-            point?.timestamp,
-            point?.date,
-            candles[index]?.time
-          );
-          if (typeof time === "string") {
-            const parsed = Date.parse(time);
-            if (Number.isFinite(parsed)) {
-              time = Math.floor(parsed / 1000);
-            }
-          } else if (
-            typeof time === "number" &&
-            time > 1e12
-          ) {
-            time = Math.floor(time / 1000);
-          }
-          return {
-            time,
-            value: Number(
-              first(point?.value, point?.rsi)
-            )
-          };
-        })
-        .filter(
-          point =>
-            point.time != null &&
-            Number.isFinite(point.value)
-        );
-    }
-    if (candles.length <= period) {
-      return [];
-    }
-    let gains = 0;
-    let losses = 0;
-    for (let i = 1; i <= period; i++) {
-      const difference =
-        candles[i].close - candles[i - 1].close;
-      if (difference > 0) {
-        gains += difference;
-      } else {
-        losses -= difference;
-      }
-    }
-    let averageGain = gains / period;
-    let averageLoss = losses / period;
-    const result = [{
-      time: candles[period].time,
-      value: averageLoss === 0
-        ? 100
-        : 100 - 100 / (
-            1 + averageGain / averageLoss
-          )
-    }];
-    for (
-      let i = period + 1;
-      i < candles.length;
-      i++
-    ) {
-      const difference =
-        candles[i].close - candles[i - 1].close;
-      averageGain = (
-        averageGain * (period - 1) +
-        Math.max(difference, 0)
-      ) / period;
-      averageLoss = (
-        averageLoss * (period - 1) +
-        Math.max(-difference, 0)
-      ) / period;
-      const value = averageLoss === 0
-        ? 100
-        : 100 - 100 / (
-            1 + averageGain / averageLoss
-          );
-      result.push({
-        time: candles[i].time,
-        value
-      });
-    }
-    return result;
-  }
-  /* ============================================================
-     CHART METRICS AND RENDERING
-     ============================================================ */
-  function renderChartMetrics(frame, candles) {
-    const last = candles.at(-1);
-    const values = {
-      chartOpen: last?.open,
-      chartHigh: last?.high,
-      chartLow: last?.low,
-      chartClose: getLastClose(frame, candles),
-      chartVolume: last?.volume,
-      chartRSI: first(frame?.rsi, frame?.RSI)
-    };
-    Object.entries(values).forEach(([id, value]) => {
-      const element = getElement(id);
-      if (!element) return;
-      if (value == null) {
-        element.textContent = "—";
-      } else if (id === "chartVolume") {
-        element.textContent = compactNumber(value);
-      } else if (id === "chartRSI") {
-        element.textContent = formatNumber(value, 1);
-      } else {
-        element.textContent = formatNumber(value, 2);
-      }
-    });
-  }
-  function renderChart() {
-    if (!state.latest && !state.selectedSnapshot) {
-      return;
-    }
-    initializeCharts();
-    const snapshot =
-      state.selectedSnapshot || state.latest;
-    const frame = getFrame(
-      state.selectedIndex,
-      state.selectedTimeframe,
-      snapshot
-    );
-    const candles = getCandles(frame);
-    const title = getElement(
-      "chartTitle",
-      "selectedChartTitle"
-    );
-    if (title) {
-      title.textContent =
-        `${state.selectedIndex} · ${state.selectedTimeframe}`;
-    }
-    const info = getElement(
-      "chartInfo",
-      "chartSubtitle"
-    );
-    if (info) {
-      const price = getLastClose(frame, candles);
-      const changeValue = getChange(frame);
-      const rsi = first(frame?.rsi, frame?.RSI);
-      info.textContent =
-        `Last: ${price == null ? "—" : formatNumber(price)}` +
-        ` · Change: ${changeValue == null ? "—" : signedNumber(changeValue, 2, "%")}` +
-        ` · RSI: ${formatNumber(rsi, 1)}`;
-    }
-    const emptyState = getElement(
-      "chartEmptyState",
-      "chartEmpty"
-    );
-    if (!candles.length) {
-      [
-        state.candleSeries,
-        state.sma20Series,
-        state.sma50Series,
-        state.sma100Series,
-        state.volumeSeries,
-        state.rsiSeries
-      ].forEach(series => {
-        if (series) series.setData([]);
-      });
-      if (emptyState) {
-        emptyState.hidden = false;
-      }
-      return;
-    }
-    if (emptyState) {
-      emptyState.hidden = true;
-    }
-    if (state.candleSeries) {
-      state.candleSeries.setData(
-        candles.map(candle => ({
-          time: candle.time,
-          open: candle.open,
-          high: candle.high,
-          low: candle.low,
-          close: candle.close
-        }))
-      );
-    }
-    if (state.sma20Series) {
-      state.sma20Series.setData(
-        getSMAPoints(
-          frame,
-          candles,
-          "sma20",
-          ["SMA20", "sma_20", "SMA_20", "ma20"],
-          20
-        )
-      );
-    }
-    if (state.sma50Series) {
-      state.sma50Series.setData(
-        getSMAPoints(
-          frame,
-          candles,
-          "sma50",
-          ["SMA50", "sma_50", "SMA_50", "ma50"],
-          50
-        )
-      );
-    }
-    if (state.sma100Series) {
-      state.sma100Series.setData(
-        getSMAPoints(
-          frame,
-          candles,
-          "sma100",
-          ["SMA100", "sma_100", "SMA_100", "ma100"],
-          100
-        )
-      );
-    }
-    if (state.volumeSeries) {
-      state.volumeSeries.setData(
-        candles.map(candle => ({
-          time: candle.time,
-          value: candle.volume,
-          color: candle.close >= candle.open
-            ? "rgba(34,197,94,0.38)"
-            : "rgba(239,68,68,0.38)"
-        }))
-      );
-    }
-    if (state.rsiSeries) {
-      state.rsiSeries.setData(
-        getRSIPoints(frame, candles)
-      );
-    }
+
+  async function loadDashboardData() {
+    const latest = await fetchJSON(CONFIG.latestUrl);
+
+    state.latest = latest;
+
     try {
-      state.priceChart?.timeScale().fitContent();
-      state.rsiChart?.timeScale().fitContent();
-    } catch (error) {
-      console.debug("Chart range update:", error);
-    }
-    renderChartMetrics(frame, candles);
-    resizeCharts();
-  }
-  /* ============================================================
-     INDEX AND TIMEFRAME SELECTORS
-     ============================================================ */
-  function populateSelectors() {
-    const indexSelect = getElement(
-      "indexSelect",
-      "indexSelector",
-      "chartIndexSelect"
-    );
-    if (
-      indexSelect &&
-      !indexSelect.dataset.generated
-    ) {
-      indexSelect.innerHTML = [
-        ["Nifty 50", "Nifty 50"],
-        ["Bank Nifty", "Bank Nifty"],
-        ["Nifty Midcap", "Nifty Midcap"]
-      ]
-        .map(([value, label]) =>
-          `<option value="${value}">${label}</option>`
-        )
-        .join("");
-      indexSelect.dataset.generated = "true";
-    }
-    if (indexSelect) {
-      const hasSelectedOption = [
-        ...indexSelect.options
-      ].some(option =>
-        option.value === state.selectedIndex
-      );
-      if (!hasSelectedOption) {
-        state.selectedIndex =
-          indexSelect.options[0]?.value ||
-          CONFIG.defaultIndex;
-      }
-      indexSelect.value = state.selectedIndex;
-    }
-    const timeframeSelect = getElement(
-      "timeframeSelect",
-      "timeframeSelector",
-      "chartTimeframeSelect"
-    );
-    if (
-      timeframeSelect &&
-      !timeframeSelect.dataset.generated
-    ) {
-      timeframeSelect.innerHTML = [
-        ["15m", "15 min"],
-        ["30m", "30 min"],
-        ["1h", "1 hour"],
-        ["Daily", "Daily"]
-      ]
-        .map(([value, label]) =>
-          `<option value="${value}">${label}</option>`
-        )
-        .join("");
-      timeframeSelect.dataset.generated = "true";
-    }
-    if (timeframeSelect) {
-      const hasSelectedOption = [
-        ...timeframeSelect.options
-      ].some(option =>
-        option.value === state.selectedTimeframe
-      );
-      if (!hasSelectedOption) {
-        state.selectedTimeframe =
-          timeframeSelect.options[0]?.value ||
-          CONFIG.defaultTimeframe;
-      }
-      timeframeSelect.value =
-        state.selectedTimeframe;
-    }
-  }
-    /* ============================================================
-     HISTORICAL SNAPSHOTS
-     ============================================================ */
-  function getHistoryItems(data) {
-    if (Array.isArray(data)) return data;
-    if (!data || typeof data !== "object") {
-      return [];
-    }
-    return toArray(
-      first(
-        data.snapshots,
-        data.history,
-        data.items,
-        data.records,
-        data.files,
-        data.dates,
-        []
-      )
-    );
-  }
-  function getHistoryPath(item) {
-    if (typeof item === "string") {
-      return item;
-    }
-    return first(
-      item?.url,
-      item?.path,
-      item?.file,
-      item?.filename,
-      item?.snapshot,
-      item?.data_file,
-      item?.dataFile,
-      ""
-    );
-  }
-  function getHistoryLabel(item) {
-    if (typeof item === "string") {
-      const filename = item.split("/").pop() || item;
-      return filename
-        .replace(/\.json$/i, "")
-        .replace(/[_-]/g, " ");
-    }
-    return first(
-      item?.label,
-      item?.date,
-      item?.timestamp,
-      item?.generated_at_ist,
-      item?.generated_at,
-      item?.name,
-      getHistoryPath(item),
-      "Historical snapshot"
-    );
-  }
-  function normalizeHistoryPath(path) {
-    if (!path) return "";
-    const value = String(path).trim();
-    if (/^https?:\/\//i.test(value)) {
-      return value;
-    }
-    return value.replace(/^\.?\//, "");
-  }
-  async function loadHistoryIndex() {
-    try {
-      const data = await fetchJson(
-        CONFIG.historyIndexUrl
-      );
-      state.history = getHistoryItems(data)
-        .map(item => ({
-          original: item,
-          path: normalizeHistoryPath(
-            getHistoryPath(item)
-          ),
-          label: getHistoryLabel(item),
-          timestamp: getTimestamp(
-            typeof item === "object" ? item : {}
-          )
-        }))
-        .filter(item => item.path)
-        .sort((a, b) => {
-          const timeA = Date.parse(
-            a.timestamp || a.label
+      const history = await fetchJSON(CONFIG.historyUrl);
+
+      state.history = Array.isArray(history)
+        ? history
+        : first(
+            history.history,
+            history.snapshots,
+            history.items,
+            history.data,
+            history
           );
-          const timeB = Date.parse(
-            b.timestamp || b.label
-          );
-          if (
-            Number.isFinite(timeA) &&
-            Number.isFinite(timeB)
-          ) {
-            return timeB - timeA;
-          }
-          return String(b.label).localeCompare(
-            String(a.label)
-          );
-        });
-      renderHistorySelector();
-      return state.history;
     } catch (error) {
       console.warn(
-        "Unable to load historical snapshots:",
+        "Historical data could not be loaded:",
         error
       );
+
       state.history = [];
-      renderHistorySelector();
-      return [];
     }
-  }
-  function renderHistorySelector() {
-    const selector = getElement(
-      "historySelect",
-      "snapshotSelect",
-      "historicalSnapshotSelect"
+
+    if (!Array.isArray(state.history)) {
+      state.history = state.history &&
+        typeof state.history === "object"
+          ? Object.values(state.history)
+          : [];
+    }
+
+    state.history = state.history.filter(
+      item => item && typeof item === "object"
     );
-    const container = getElement(
-      "historyList",
-      "historyContainer",
-      "historicalSnapshots"
-    );
-    if (selector) {
-      const options = [
-        '<option value="latest">Latest snapshot</option>',
-        ...state.history.map((item, index) => `
-          <option value="${index}">
-            ${escapeHtml(item.label)}
-          </option>
-        `)
-      ];
-      selector.innerHTML = options.join("");
-      selector.value = "latest";
-    }
-    if (container) {
-      if (!state.history.length) {
-        setHtml(
-          container,
-          '<div class="empty-state">No historical snapshots available.</div>'
-        );
-        return;
-      }
-      setHtml(
-        container,
-        `
-          <button
-            type="button"
-            class="history-item active"
-            data-history-index="latest"
-          >
-            <span class="history-item-title">
-              Latest snapshot
-            </span>
-            <span class="history-item-date">
-              Current dashboard data
-            </span>
-          </button>
-          ${state.history.map((item, index) => `
-            <button
-              type="button"
-              class="history-item"
-              data-history-index="${index}"
-            >
-              <span class="history-item-title">
-                ${escapeHtml(item.label)}
-              </span>
-              <span class="history-item-date">
-                ${escapeHtml(
-                  item.timestamp
-                    ? formatTimestamp(item.timestamp)
-                    : item.path
-                )}
-              </span>
-            </button>
-          `).join("")}
-        `
-      );
-    }
   }
-  async function selectHistorySnapshot(index) {
-    if (index === "latest" || index == null) {
-      state.selectedSnapshot = null;
-      const selector = getElement(
-        "historySelect",
-        "snapshotSelect",
-        "historicalSnapshotSelect"
-      );
-      if (selector) {
-        selector.value = "latest";
-      }
-      updateHistoryActiveState("latest");
-      renderDashboard(state.latest);
-      setStatus("Showing latest market snapshot", "success");
-      return;
-    }
-    const historyItem = state.history[Number(index)];
-    if (!historyItem || !historyItem.path) {
-      setStatus("Historical snapshot not found", "error");
-      return;
-    }
-    try {
-      setStatus("Loading historical snapshot…", "info");
-      const snapshot = await fetchJson(
-        historyItem.path
-      );
-      state.selectedSnapshot = snapshot;
-      const selector = getElement(
-        "historySelect",
-        "snapshotSelect",
-        "historicalSnapshotSelect"
-      );
-      if (selector) {
-        selector.value = String(index);
-      }
-      updateHistoryActiveState(index);
-      renderDashboard(snapshot);
-      setStatus(
-        `Showing snapshot: ${historyItem.label}`,
-        "success"
-      );
-    } catch (error) {
-      console.error(
-        "Unable to load historical snapshot:",
-        error
-      );
-      setStatus(
-        "Unable to load this historical snapshot",
+
+  /* ============================================================
+     RENDER ALL DASHBOARD SECTIONS
+     ============================================================ */
+
+  function renderAll() {
+    const data = getCurrentData();
+
+    if (!data || typeof data !== "object") {
+      updateStatus(
+        "No market data available.",
         "error"
       );
+
+      return;
     }
-  }
-  function updateHistoryActiveState(index) {
-    $$("[data-history-index]").forEach(button => {
-      const active =
-        String(button.dataset.historyIndex) ===
-        String(index);
-      button.classList.toggle("active", active);
-      button.setAttribute(
-        "aria-pressed",
-        String(active)
-      );
+
+    renderHeader(data);
+    renderOverall(data);
+    renderSnapshot(data);
+
+    renderPriceAction();
+    renderTrendAnalysis();
+
+    renderOptions();
+    renderGlobalMarkets();
+    renderWeeklyTrend();
+    renderScoreBreakdown();
+    renderNews();
+
+    bindSelectors();
+    bindSnapshotSelector();
+    bindRefreshButton();
+
+    populateSnapshotSelector();
+
+    setupResizeHandling();
+
+    requestAnimationFrame(() => {
+      resizeCharts();
     });
   }
+
   /* ============================================================
-     DASHBOARD RENDERING
+     DASHBOARD INITIALIZATION
      ============================================================ */
-  function renderDashboard(data) {
-    if (!data || typeof data !== "object") {
-      setStatus("No valid market data found", "error");
-      return;
-    }
-    renderHeader(data);
-    renderIndexCards(data);
-    renderScoreBreakdown(data);
-    renderOptions(data);
-    renderGlobalMarkets(data);
-    renderNews(data);
-    renderSevenDay(data);
-    populateSelectors();
-    renderChart();
-    const snapshotLabel = getElement(
-      "snapshotLabel",
-      "dataViewLabel"
-    );
-    if (snapshotLabel) {
-      snapshotLabel.textContent =
-        state.selectedSnapshot
-          ? "Historical snapshot"
-          : "Latest snapshot";
-    }
-  }
-  /* ============================================================
-     REFRESH AND CONNECTION STATUS
-     ============================================================ */
-  async function refreshDashboard(options = {}) {
+
+  async function loadDashboard(isManualRefresh = false) {
     if (state.loading) return;
+
     state.loading = true;
-    const showRefreshing = options.showRefreshing !== false;
-    if (showRefreshing) {
-      setStatus("Refreshing market data…", "info");
-    }
-    try {
-      const latest = await fetchJson(
-        CONFIG.latestUrl
+
+    if (isManualRefresh) {
+      updateStatus(
+        "Refreshing market data...",
+        "loading"
       );
-      if (
-        !latest ||
-        typeof latest !== "object" ||
-        Array.isArray(latest)
-      ) {
-        throw new Error(
-          "The latest JSON file does not contain an object."
-        );
-      }
-      state.latest = latest;
-      // Only replace the visible dashboard if the user is
-      // viewing the latest snapshot.
-      if (!state.selectedSnapshot) {
-        renderDashboard(state.latest);
-      }
-      setStatus(
-        `Data loaded · ${formatTimestamp(getTimestamp(latest))}`,
+    }
+
+    try {
+      await loadDashboardData();
+
+      renderAll();
+
+      const updated = formatTimestamp(
+        timestamp(state.latest)
+      );
+
+      updateStatus(
+        `Data loaded successfully · ${updated}`,
         "success"
       );
-      // Keep the history list reasonably current.
-      if (options.loadHistory !== false) {
-        await loadHistoryIndex();
-      }
+
     } catch (error) {
       console.error(
-        "Dashboard refresh failed:",
+        "Dashboard loading failed:",
         error
       );
-      setStatus(
-        "Unable to load market data. Check the data files and deployment.",
+
+      updateStatus(
+        "Unable to load market data. Please refresh.",
         "error"
       );
-      if (!state.latest) {
-        showInitialError(error);
-      }
+
+      const containers = [
+        "indexCards",
+        "technicalCards",
+        "trendCards",
+        "optionsCards",
+        "optionsGrid",
+        "globalCards",
+        "weeklyCards",
+        "scoreBreakdown",
+        "newsCards"
+      ];
+
+      containers.forEach(id => {
+        const node = el(id);
+
+        if (node && !node.innerHTML.trim()) {
+          node.innerHTML = `
+            <div class="loading-card">
+              Data could not be loaded.
+              Check the browser console for details.
+            </div>
+          `;
+        }
+      });
+
     } finally {
       state.loading = false;
     }
   }
-  function showInitialError(error) {
-    const candidates = [
-      getElement("indexCards"),
-      getElement("indicesGrid"),
-      getElement("marketCards"),
-      getElement("indexOverview")
-    ].filter(Boolean);
-    const target = candidates[0];
-    if (target) {
-      target.innerHTML = `
-        <div class="empty-state error-state">
-          <strong>Market data unavailable</strong>
-          <p>
-            The dashboard could not load its latest JSON data.
-          </p>
-          <p class="muted">
-            ${escapeHtml(error?.message || "Unknown error")}
-          </p>
-          <button
-            type="button"
-            id="retryDashboardButton"
-            class="primary-button"
-          >
-            Retry
-          </button>
-        </div>
-      `;
-      getElement("retryDashboardButton")
-        ?.addEventListener("click", () => {
-          refreshDashboard();
-        });
-    }
-  }
-  function setupAutoRefresh() {
+
+  /* ============================================================
+     OPTIONAL AUTO-REFRESH
+     ============================================================ */
+
+  function startAutoRefresh() {
     if (state.refreshTimer) {
       clearInterval(state.refreshTimer);
     }
-    state.refreshTimer = window.setInterval(() => {
-      refreshDashboard({
-        showRefreshing: false,
-        loadHistory: false
-      });
+
+    state.refreshTimer = setInterval(() => {
+      if (document.visibilityState === "visible") {
+        loadDashboard(false);
+      }
     }, CONFIG.refreshInterval);
+  }
+
+  /* ============================================================
+     START THE DASHBOARD
+     ============================================================ */
+
+  function initializeDashboard() {
+    bindSelectors();
+    bindSnapshotSelector();
+    bindRefreshButton();
+
+    loadDashboard(false);
+
+    startAutoRefresh();
+
     document.addEventListener(
       "visibilitychange",
       () => {
-        if (!document.hidden) {
-          refreshDashboard({
-            showRefreshing: false,
-            loadHistory: false
-          });
+        if (document.visibilityState === "visible") {
+          resizeCharts();
         }
       }
     );
+
+    console.info(
+      "Market Pulse Dashboard initialized."
+    );
   }
-  /* ============================================================
-     MOBILE NAVIGATION
-     ============================================================ */
-  function setupMobileNavigation() {
-    const menuButton = getElement(
-      "mobileMenuButton",
-      "menuToggle",
-      "navToggle",
-      "hamburgerButton"
-    );
-    const navigation = getElement(
-      "mainNavigation",
-      "mainNav",
-      "sidebar",
-      "dashboardNav"
-    );
-    if (menuButton && navigation) {
-      menuButton.setAttribute(
-        "aria-expanded",
-        "false"
-      );
-      menuButton.setAttribute(
-        "aria-label",
-        "Toggle navigation"
-      );
-      menuButton.addEventListener("click", () => {
-        const isOpen =
-          navigation.classList.toggle("is-open");
-        menuButton.classList.toggle(
-          "is-active",
-          isOpen
-        );
-        menuButton.setAttribute(
-          "aria-expanded",
-          String(isOpen)
-        );
-      });
-      navigation.addEventListener("click", event => {
-        const link = event.target.closest(
-          'a[href^="#"]'
-        );
-        if (!link) return;
-        navigation.classList.remove("is-open");
-        menuButton.classList.remove("is-active");
-        menuButton.setAttribute(
-          "aria-expanded",
-          "false"
-        );
-      });
-      document.addEventListener("click", event => {
-        if (
-          !navigation.classList.contains("is-open")
-        ) {
-          return;
-        }
-        if (
-          navigation.contains(event.target) ||
-          menuButton.contains(event.target)
-        ) {
-          return;
-        }
-        navigation.classList.remove("is-open");
-        menuButton.classList.remove("is-active");
-        menuButton.setAttribute(
-          "aria-expanded",
-          "false"
-        );
-      });
-    }
-    // Support section navigation buttons and cards.
-    $$("[data-scroll-target]").forEach(button => {
-      button.addEventListener("click", () => {
-        const targetId =
-          button.dataset.scrollTarget;
-        const target = document.getElementById(
-          targetId
-        );
-        target?.scrollIntoView({
-          behavior: "smooth",
-          block: "start"
-        });
-      });
-    });
-    // Make anchor navigation account for sticky headers.
-    $$('a[href^="#"]').forEach(link => {
-      link.addEventListener("click", event => {
-        const id = link.getAttribute("href")?.slice(1);
-        if (!id) return;
-        const target = document.getElementById(id);
-        if (!target) return;
-        event.preventDefault();
-        target.scrollIntoView({
-          behavior: "smooth",
-          block: "start"
-        });
-        if (history.replaceState) {
-          history.replaceState(null, "", `#${id}`);
-        }
-      });
-    });
-  }
-  /* ============================================================
-     EVENT LISTENERS
-     ============================================================ */
-  function setupEventListeners() {
-    const indexSelect = getElement(
-      "indexSelect",
-      "indexSelector",
-      "chartIndexSelect"
-    );
-    if (indexSelect) {
-      indexSelect.addEventListener("change", () => {
-        state.selectedIndex = indexSelect.value;
-        renderChart();
-      });
-    }
-    const timeframeSelect = getElement(
-      "timeframeSelect",
-      "timeframeSelector",
-      "chartTimeframeSelect"
-    );
-    if (timeframeSelect) {
-      timeframeSelect.addEventListener("change", () => {
-        state.selectedTimeframe =
-          timeframeSelect.value;
-        renderChart();
-      });
-    }
-    const historySelect = getElement(
-      "historySelect",
-      "snapshotSelect",
-      "historicalSnapshotSelect"
-    );
-    if (historySelect) {
-      historySelect.addEventListener("change", () => {
-        selectHistorySnapshot(
-          historySelect.value
-        );
-      });
-    }
-    $$("[data-history-index]").forEach(button => {
-      button.addEventListener("click", () => {
-        selectHistorySnapshot(
-          button.dataset.historyIndex
-        );
-      });
-    });
-    const refreshButton = getElement(
-      "refreshButton",
-      "refreshData",
-      "refreshDashboard"
-    );
-    if (refreshButton) {
-      refreshButton.addEventListener("click", async () => {
-        const originalText =
-          refreshButton.textContent;
-        refreshButton.disabled = true;
-        refreshButton.textContent = "Refreshing…";
-        try {
-          await refreshDashboard({
-            showRefreshing: true,
-            loadHistory: true
-          });
-        } finally {
-          refreshButton.disabled = false;
-          refreshButton.textContent =
-            originalText || "Refresh";
-        }
-      });
-    }
-    // Show a friendly IST timestamp in the footer if present.
-    setText(
-      "footerYear",
-      new Date().getFullYear()
-    );
-    // Allow the user to reset the selected view to latest data.
-    const latestButton = getElement(
-      "latestSnapshotButton",
-      "showLatestButton"
-    );
-    if (latestButton) {
-      latestButton.addEventListener("click", () => {
-        selectHistorySnapshot("latest");
-      });
-    }
-  }
-  /* ============================================================
-     ACCESSIBILITY AND BASIC MOBILE POLISH
-     ============================================================ */
-  function setupAccessibility() {
-    $$("button").forEach(button => {
-      if (!button.hasAttribute("type")) {
-        button.setAttribute("type", "button");
-      }
-    });
-    // Prevent accidental horizontal overflow caused by long text.
-    $$("a[target='_blank']").forEach(link => {
-      link.setAttribute("rel", "noopener noreferrer");
-    });
-    // Make chart containers identifiable to screen readers.
-    const priceChart = getPriceChartElement();
-    const rsiChart = getRsiChartElement();
-    if (priceChart && !priceChart.hasAttribute("role")) {
-      priceChart.setAttribute("role", "img");
-      priceChart.setAttribute(
-        "aria-label",
-        "Interactive candlestick chart with moving averages and volume"
-      );
-    }
-    if (rsiChart && !rsiChart.hasAttribute("role")) {
-      rsiChart.setAttribute("role", "img");
-      rsiChart.setAttribute(
-        "aria-label",
-        "Relative Strength Index chart with 30 and 70 guide levels"
-      );
-    }
-  }
-  /* ============================================================
-     INITIALIZATION
-     ============================================================ */
-  async function initializeDashboard() {
-    try {
-      setupMobileNavigation();
-      setupEventListeners();
-      setupAccessibility();
-      populateSelectors();
-      await refreshDashboard({
-        showRefreshing: true,
-        loadHistory: true
-      });
-      setupAutoRefresh();
-      // If a chart section is initially hidden, resize after layout.
-      window.setTimeout(() => {
-        resizeCharts();
-      }, 250);
-      window.setTimeout(() => {
-        resizeCharts();
-      }, 1000);
-    } catch (error) {
-      console.error(
-        "Dashboard initialization error:",
-        error
-      );
-      setStatus(
-        "Dashboard initialization failed",
-        "error"
-      );
-    }
-  }
+
   if (document.readyState === "loading") {
     document.addEventListener(
       "DOMContentLoaded",
@@ -2455,4 +2666,5 @@
   } else {
     initializeDashboard();
   }
+
 })();

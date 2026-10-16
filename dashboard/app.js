@@ -560,9 +560,13 @@ function safeHttpUrl(value) {
 function clearCharts() {
     state.charts.forEach((chart) => {
         try {
+            if (chart.__resizeObserver) {
+                chart.__resizeObserver.disconnect();
+            }
+
             chart.remove();
         } catch (error) {
-            // Ignore chart cleanup errors.
+            console.warn("Chart cleanup warning:", error);
         }
     });
 
@@ -653,7 +657,12 @@ function renderChart() {
 
     const timeframe = state.selectedTimeframe;
     const timeframeData = indexData.timeframes?.[timeframe] || {};
-    const candles = validCandles(indexData.charts?.[timeframe] || []);
+    const candles = validCandles(indexData.charts?.[timeframe] || [])
+    .sort((a, b) => Number(a.time) - Number(b.time))
+    .filter((candle, index, array) =>
+        index === 0 ||
+        Number(candle.time) > Number(array[index - 1].time)
+    );
 
     setText("chartInstrument", `${state.selectedIndex} · ${timeframe}`);
     setText("chartPrice", formatNumber(timeframeData.close));

@@ -71,6 +71,56 @@ function setText(id, value) {
     if (element) element.textContent = value ?? "--";
 }
 
+function formatDashboardDateTime(value) {
+    if (!value) return "--";
+
+    // Interpret the existing timestamp as Indian Standard Time.
+    const timestamp = String(value).replace(" ", "T");
+
+    const date = new Date(
+        /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(timestamp)
+            ? `${timestamp}+05:30`
+            : timestamp
+    );
+
+    if (Number.isNaN(date.getTime())) return value;
+
+    const day = Number(
+        new Intl.DateTimeFormat("en-IN", {
+            day: "numeric",
+            timeZone: "Asia/Kolkata"
+        }).format(date)
+    );
+
+    const suffix =
+        day >= 11 && day <= 13
+            ? "th"
+            : day % 10 === 1
+                ? "st"
+                : day % 10 === 2
+                    ? "nd"
+                    : day % 10 === 3
+                        ? "rd"
+                        : "th";
+
+    const datePart = new Intl.DateTimeFormat("en-GB", {
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+        timeZone: "Asia/Kolkata"
+    }).format(date);
+
+    const timePart = new Intl.DateTimeFormat("en-US", {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: true,
+        timeZone: "Asia/Kolkata"
+    }).format(date).toUpperCase();
+
+    return `${datePart.replace(/^(\d+)/, `$1${suffix}`)} : ${timePart}`;
+}
+
 function setHtml(id, html) {
     const element = byId(id);
     if (element) element.innerHTML = html;
@@ -223,10 +273,10 @@ function renderOverall(data) {
     setText("overallLabel", overall.label || "Market bias unavailable");
     setText("scoreGaugeValue", gaugeScore.toFixed(0));
     setText("coverageValue", `${coverage.toFixed(0)}%`);
-    setText("dataTimestamp", data.generated_at_ist || data.generated_at || "--");
+    setText("dataTimestamp", formatDashboardDateTime(data.generated_at_ist || data.generated_at));
     setText("sessionSummary", data.market_status || "--");
     setText("marketStatus", data.market_status || "Market status unavailable");
-    setText("lastUpdated", data.generated_at_ist || "--");
+    setText("lastUpdated", formatDashboardDateTime(data.generated_at_ist || data.generated_at));
 
     setWidth("scoreTrackFill", gaugeScore);
     setWidth("coverageFill", coverage);

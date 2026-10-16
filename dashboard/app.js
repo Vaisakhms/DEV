@@ -758,7 +758,7 @@ const priceChart = addChart(priceContainer, { height: 300 });
             lineWidth: 2,
             title: definition.name,
             priceLineVisible: false,
-            lastValueVisible: false
+            lastValueVisible: false,
             autoscaleInfoProvider: fixedPriceRange
         });
 

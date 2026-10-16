@@ -4,11 +4,21 @@ on:
   workflow_dispatch:
 
   schedule:
-    # 09:45 IST = 04:15 UTC
-    - cron: "15 4 * * 1-5"
+    # Morning global market perspective: 8:30 AM IST, Monday-Friday
+    - cron: "30 8 * * 1-5"
+      timezone: "Asia/Kolkata"
 
-    # 13:00 IST = 07:30 UTC
-    - cron: "30 7 * * 1-5"
+    # Market session: 9:20 AM to 9:55 AM IST, every 5 minutes
+    - cron: "20-55/5 9 * * 1-5"
+      timezone: "Asia/Kolkata"
+
+    # Market session: 10:00 AM to 2:55 PM IST, every 5 minutes
+    - cron: "*/5 10-14 * * 1-5"
+      timezone: "Asia/Kolkata"
+
+    # Market session: 3:00 PM to 3:15 PM IST, every 5 minutes
+    - cron: "0-15/5 15 * * 1-5"
+      timezone: "Asia/Kolkata"
 
 permissions:
   contents: write

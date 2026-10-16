@@ -1,36 +1,80 @@
-name: Run Market Analysis Script and Notify
+name: Run Market Analysis and Publish Dashboard
 
 on:
   workflow_dispatch:
-  # Optional: uncomment to run automatically on weekdays (times are UTC).
-  # 09:45 IST = 04:15 UTC, 13:00 IST = 07:30 UTC
-  # schedule:
-  #   - cron: '15 4 * * 1-5'
-  #   - cron: '30 7 * * 1-5'
+
+  schedule:
+    # 09:45 IST = 04:15 UTC
+    - cron: "15 4 * * 1-5"
+
+    # 13:00 IST = 07:30 UTC
+    - cron: "30 7 * * 1-5"
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: market-dashboard
+  cancel-in-progress: false
 
 jobs:
   run-and-notify:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: "3.10"
+          cache: "pip"
 
       - name: Install dependencies
-        run: pip install requests yfinance pandas pyotp fyers-apiv3
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests yfinance pandas pyotp fyers-apiv3
 
-      - name: Run my python script
+      - name: Run market analysis
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+
           FYERS_CLIENT_ID: ${{ secrets.FYERS_CLIENT_ID }}
           FYERS_SECRET_KEY: ${{ secrets.FYERS_SECRET_KEY }}
           FYERS_ID: ${{ secrets.FYERS_ID }}
           FYERS_PIN: ${{ secrets.FYERS_PIN }}
           FYERS_TOTP_SECRET: ${{ secrets.FYERS_TOTP_SECRET }}
+
         run: python TG_Alert/test/notify.py
+
+      - name: Commit dashboard data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add dashboard/data/latest.json
+          git add dashboard/data/history/index.json
+          git add dashboard/data/snapshots/
+
+          if git diff --cached --quiet; then
+            echo "No dashboard data changes to commit."
+          else
+            git commit -m "Update market dashboard data"
+            git push
+          fi
+
+      - name: Upload dashboard for GitHub Pages
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dashboard
+
+      - name: Deploy dashboard to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

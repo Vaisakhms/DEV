@@ -161,7 +161,7 @@ def fetch_market_analysis():
   }
 
   summary_lines = [
-      "📊 *Intraday Market Conviction & Technical Summary (15M)*\n"
+      "📊 *Multi-Timeframe Market Conviction & Technical Summary*\n"
   ]
   summary_lines.append(
       f"_Generated on: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')} IST_\n"
@@ -187,74 +187,97 @@ def fetch_market_analysis():
     except Exception:
       summary_lines.append(f"• *{name}*: Data unavailable")
 
-  # 2. Nifty 15-Minute SMAs & RSI via Fyers API
+  # 2. Multi-Timeframe Analysis (15m, 30m, 1h) for Nifty 50, Bank Nifty, Nifty Midcap
+  summary_lines.append(
+      "\n*2. Multi-Timeframe Index Directional Analysis (15M, 30M, 1H):*"
+  )
+
+  indices = {
+      "Nifty 50": "NSE:NIFTY50-INDEX",
+      "Bank Nifty": "NSE:NIFTYBANK-INDEX",
+      "Nifty Midcap": "NSE:NIFTYMID50-INDEX",
+  }
+
+  timeframes = {"15m": "15", "30m": "30", "1h": "60"}
+
   try:
     to_date = int(datetime.datetime.now().timestamp())
-    from_date = to_date - (5 * 86400)
+    from_date = to_date - (10 * 86400)
 
-    df_15m = fetch_fyers_history(
-        "NSE:NIFTY50-INDEX", "15", str(from_date), str(to_date)
-    )
-    if not df_15m.empty:
-      c_15m = df_15m["Close"]
+    for index_name, symbol in indices.items():
+      summary_lines.append(f"\n• *{index_name}*:")
+      tf_biases = []
 
-      sma_20_15m = float(c_15m.rolling(window=20).mean().iloc[-1])
-      sma_50_15m = float(c_15m.rolling(window=50).mean().iloc[-1])
-      sma_100_15m = float(c_15m.rolling(window=100).mean().iloc[-1])
-      last_close_15m = float(c_15m.iloc[-1])
-
-      rsi_series = compute_rsi(c_15m, 14)
-      current_rsi_15m = float(rsi_series.iloc[-1])
-
-      summary_lines.append(
-          "\n*2. Nifty 50 15-Min Trend & Momentum (Fyers Feed):*"
-      )
-      summary_lines.append(
-          f"• *Current Price*: `{last_close_15m:,.2f}`\n"
-          f"• *15M SMA 20*: `{sma_20_15m:,.2f}` | *15M SMA 50*:"
-          f" `{sma_50_15m:,.2f}` | *15M SMA 100*: `{sma_100_15m:,.2f}`"
-      )
-      summary_lines.append(
-          f"• *15-Min RSI (14)*: `{current_rsi_15m:.2f}` "
-          f"({'Overbought 🔴' if current_rsi_15m > 70 else 'Oversold 🟢' if current_rsi_15m < 30 else 'Neutral ⚖️'})"
-      )
-
-      # 3. Classic Intraday Pivots (Calculated from Daily Fyers Data)
-      df_daily = fetch_fyers_history(
-          "NSE:NIFTY50-INDEX", "D", str(from_date), str(to_date)
-      )
-      if not df_daily.empty and len(df_daily) >= 2:
-        prev_high = float(df_daily["High"].iloc[-2])
-        prev_low = float(df_daily["Low"].iloc[-2])
-        prev_close = float(df_daily["Close"].iloc[-2])
-
-        pivot = (prev_high + prev_low + prev_close) / 3
-        r1 = (2 * pivot) - prev_low
-        s1 = (2 * pivot) - prev_high
-        r2 = pivot + (prev_high - prev_low)
-        s2 = pivot - (prev_high - prev_low)
-
-        summary_lines.append("\n*3. Tighter Intraday Levels (Classic Pivots):*")
-        summary_lines.append(f"• *Resistance (R2)*: `{r2:,.2f}`")
-        summary_lines.append(f"• *Resistance (R1)*: `{r1:,.2f}`")
-        summary_lines.append(f"• *Pivot Point*: `{pivot:,.2f}`")
-        summary_lines.append(f"• *Support (S1)*: `{s1:,.2f}`")
-        summary_lines.append(f"• *Support (S2)*: `{s2:,.2f}`")
-
-        # 4. Directional Bias
-        trend_bias = (
-            "Bullish 🟢"
-            if last_close_15m > sma_20_15m
-            else ("Bearish 🔴" if last_close_15m < sma_20_15m else "Neutral ⚖️")
+      for tf_label, tf_res in timeframes.items():
+        df_tf = fetch_fyers_history(
+            symbol, tf_res, str(from_date), str(to_date)
         )
+        if not df_tf.empty and len(df_tf) >= 20:
+          c_series = df_tf["Close"]
+          last_close = float(c_series.iloc[-1])
+          ema_9 = float(c_series.ewm(span=9, adjust=False).mean().iloc[-1])
+          ema_20 = float(c_series.ewm(span=20, adjust=False).mean().iloc[-1])
+          rsi_val = float(compute_rsi(c_series, 14).iloc[-1])
+
+          if last_close > ema_9 and ema_9 > ema_20:
+            bias = "Bullish 🟢"
+            tf_biases.append("Bullish")
+          elif last_close < ema_9 and ema_9 < ema_20:
+            bias = "Bearish 🔴"
+            tf_biases.append("Bearish")
+          else:
+            bias = "Neutral ⚖️"
+            tf_biases.append("Neutral")
+
+          summary_lines.append(
+              f"  - *{tf_label}*: Close=`{last_close:,.2f}` | EMA9=`{ema_9:,.2f}`"
+              f" | EMA20=`{ema_20:,.2f}` | RSI=`{rsi_val:.1f}` ({bias})"
+          )
+        else:
+          summary_lines.append(f"  - *{tf_label}*: Data unavailable")
+
+      if tf_biases:
+        bull_count = tf_biases.count("Bullish")
+        bear_count = tf_biases.count("Bearish")
+        if bull_count >= 2:
+          overall_idx_bias = "Strong Bullish 🟢"
+        elif bear_count >= 2:
+          overall_idx_bias = "Strong Bearish 🔴"
+        else:
+          overall_idx_bias = "Sideways / Mixed ⚖️"
         summary_lines.append(
-            f"\n*4. 15-Min Directional Bias*: **{trend_bias}**"
+            f"  👉 *Potential Direction Bias*: **{overall_idx_bias}**"
         )
-  except Exception as e:
-    summary_lines.append(f"\n*2/3/4. Fyers Data Error*: `{str(e)}`")
 
-  # 5. Live Open Interest Analysis
-  summary_lines.append("\n*5. Live Option Chain & Weekly Expiry Dynamics:*")
+    # 3. Classic Intraday Pivots for Nifty 50 (Calculated from Daily Fyers Data)
+    df_daily = fetch_fyers_history(
+        "NSE:NIFTY50-INDEX", "D", str(from_date), str(to_date)
+    )
+    if not df_daily.empty and len(df_daily) >= 2:
+      prev_high = float(df_daily["High"].iloc[-2])
+      prev_low = float(df_daily["Low"].iloc[-2])
+      prev_close = float(df_daily["Close"].iloc[-2])
+
+      pivot = (prev_high + prev_low + prev_close) / 3
+      r1 = (2 * pivot) - prev_low
+      s1 = (2 * pivot) - prev_high
+      r2 = pivot + (prev_high - prev_low)
+      s2 = pivot - (prev_high - prev_low)
+
+      summary_lines.append(
+          "\n*3. Nifty 50 Intraday Levels (Classic Pivots):*"
+      )
+      summary_lines.append(f"• *Resistance (R2)*: `{r2:,.2f}`")
+      summary_lines.append(f"• *Resistance (R1)*: `{r1:,.2f}`")
+      summary_lines.append(f"• *Pivot Point*: `{pivot:,.2f}`")
+      summary_lines.append(f"• *Support (S1)*: `{s1:,.2f}`")
+      summary_lines.append(f"• *Support (S2)*: `{s2:,.2f}`")
+
+  except Exception as e:
+    summary_lines.append(f"\n*Fyers Analysis Error*: `{str(e)}`")
+
+  # 4. Live Open Interest Analysis
+  summary_lines.append("\n*4. Live Option Chain & Weekly Expiry Dynamics:*")
   summary_lines.append(fetch_nse_option_chain())
 
   return "\n".join(summary_lines)

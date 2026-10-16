@@ -106,6 +106,71 @@ function sentimentClass(value) {
     return "neutral";
 }
 
+function optionOiSentiment(buildup, optionType) {
+    const value = String(buildup ?? "").toLowerCase();
+    const type = String(optionType ?? "").toLowerCase();
+
+    if (
+        value.includes("no change") ||
+        value.includes("unavailable") ||
+        !value
+    ) {
+        return {
+            label: "Neutral",
+            className: "neutral"
+        };
+    }
+
+    if (type === "call") {
+        if (
+            value.includes("long buildup") ||
+            value.includes("short covering")
+        ) {
+            return {
+                label: "Bullish",
+                className: "positive"
+            };
+        }
+
+        if (
+            value.includes("short buildup") ||
+            value.includes("long unwinding")
+        ) {
+            return {
+                label: "Bearish",
+                className: "negative"
+            };
+        }
+    }
+
+    if (type === "put") {
+        if (
+            value.includes("short buildup") ||
+            value.includes("long unwinding")
+        ) {
+            return {
+                label: "Bullish",
+                className: "positive"
+            };
+        }
+
+        if (
+            value.includes("long buildup") ||
+            value.includes("short covering")
+        ) {
+            return {
+                label: "Bearish",
+                className: "negative"
+            };
+        }
+    }
+
+    return {
+        label: "Neutral",
+        className: "neutral"
+    };
+}
+
 function scoreLabel(score) {
     const n = number(score, 0);
 

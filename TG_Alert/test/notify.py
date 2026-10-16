@@ -1473,7 +1473,7 @@ def save_dashboard_snapshot(payload):
     """
     Write latest.json and an immutable per-run snapshot.
 
-    Historical index is sorted newest-first and limited to 180 entries.
+    Historical index is sorted newest-first and limited to 12 entries.
     """
 
     DASHBOARD_DATA.mkdir(parents=True, exist_ok=True)
@@ -1522,7 +1522,7 @@ def save_dashboard_snapshot(payload):
         ),
     })
 
-    history = history[:180]
+    history = history[:12]
 
     # Remove snapshots outside the retained history window.
     retained = {item["file"] for item in history}

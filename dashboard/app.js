@@ -703,7 +703,19 @@ function renderChart() {
         return;
     }
 
-    const priceChart = addChart(priceContainer, { height: 300 });
+    const latestClose = Number(candles[candles.length - 1].close);
+
+const priceMin = latestClose - 250;
+const priceMax = latestClose + 250;
+
+const fixedPriceRange = () => ({
+    priceRange: {
+        minValue: priceMin,
+        maxValue: priceMax
+    }
+});
+
+const priceChart = addChart(priceContainer, { height: 300 });
 
     if (!priceChart) return;
 
@@ -714,6 +726,7 @@ function renderChart() {
         borderDownColor: "#ef4444",
         wickUpColor: "#22c55e",
         wickDownColor: "#ef4444"
+        autoscaleInfoProvider: fixedPriceRange
     });
 
     candleSeries.setData(candles.map((candle) => ({
@@ -746,6 +759,7 @@ function renderChart() {
             title: definition.name,
             priceLineVisible: false,
             lastValueVisible: false
+            autoscaleInfoProvider: fixedPriceRange
         });
 
         series.setData(values);
@@ -814,7 +828,16 @@ function renderChart() {
         rsiChart.timeScale().fitContent();
     }
 
-    syncChartTimeScales();
+    const visibleRange = {
+    from: Math.max(0, candles.length - 60),
+    to: candles.length + 2
+};
+
+state.charts.forEach((chart) => {
+    chart.timeScale().setVisibleLogicalRange(visibleRange);
+});
+
+syncChartTimeScales();
 }
 
 function syncChartTimeScales() {

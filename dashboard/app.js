@@ -474,10 +474,15 @@ function renderOptions(data) {
                 </div>
                 <div class="summary-row">
                     <span>Positioning</span>
-                    <strong class="status-pill ${sentimentClass(item.buildup)}">
-                        ${escapeHtml(item.buildup || "--")}
-                    </strong>
+                    <strong class="status-pill ${sentimentClass(item.buildup)}">${escapeHtml(item.buildup || "--")}</strong>
                 </div>
+                <div class="summary-row">
+                <span>OI Sentiment</span>
+        ${(() => {
+        const sentiment = optionOiSentiment(item.buildup, contract.type);
+        return `<strong class="status-pill ${sentiment.className}">${sentiment.label}</strong>`;
+    })()}
+</div>
             </article>
         `;
     }).join("");

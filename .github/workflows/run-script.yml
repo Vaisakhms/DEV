@@ -2,9 +2,6 @@ name: Run Market Analysis Script and Notify
 
 on:
   workflow_dispatch:
-  # Optional: You can also schedule it automatically (e.g., every weekday at 8:30 AM IST before market opens)
-  # schedule:
-  #   - cron: '30 3 * * 1-5'
 
 jobs:
   run-and-notify:
@@ -19,10 +16,13 @@ jobs:
           python-version: '3.10'
 
       - name: Install dependencies
-        run: pip install requests yfinance pandas
+        run: pip install requests yfinance pandas fyers-apiv3
 
       - name: Run my python script
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          FYERS_CLIENT_ID: ${{ secrets.FYERS_CLIENT_ID }}
+          FYERS_SECRET_KEY: ${{ secrets.FYERS_SECRET_KEY }}
+          FYERS_AUTH_CODE: ${{ secrets.FYERS_AUTH_CODE }}
         run: python TG_Alert/test/notify.py

@@ -1,465 +1,587 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta charset="UTF-8">
 
-  <title>Market Intelligence | India</title>
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1, viewport-fit=cover"
+    >
 
-  <meta
-    name="description"
-    content="Indian market technical analysis, options data, global markets and historical market bias."
-  >
+    <meta name="theme-color" content="#0b1120">
 
-  <link rel="stylesheet" href="./styles.css">
+    <meta
+        name="description"
+        content="Market analysis dashboard with Indian indices, technical indicators, options data, global markets, and historical snapshots."
+    >
 
-  <script src="https://unpkg.com/lightweight-charts@4.2.2/dist/lightweight-charts.standalone.production.js"></script>
+    <title>Market Pulse | Vaisakh</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+    <link
+        href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap"
+        rel="stylesheet"
+    >
+
+    <link rel="stylesheet" href="./styles.css">
+
+    <!-- Lightweight Charts for interactive candlestick charts -->
+    <script
+        defer
+        src="https://unpkg.com/lightweight-charts@4.2.2/dist/lightweight-charts.standalone.production.js"
+    ></script>
+
+    <script defer src="./app.js"></script>
 </head>
 
 <body>
-  <div class="app-shell">
 
-    <header class="topbar">
-      <div class="brand">
-        <div class="brand-icon">MI</div>
+    <div class="app-shell">
 
-        <div>
-          <h1>Market Intelligence</h1>
-          <p>Indian markets · Quantitative overview</p>
-        </div>
-      </div>
+        <!-- Header -->
+        <header class="topbar">
 
-      <div class="header-right">
-        <div class="market-status">
-          <span id="status-dot" class="status-dot"></span>
-          <span id="market-status">Loading market status</span>
-        </div>
+            <div class="brand">
+                <div class="brand-icon">MP</div>
 
-        <div class="updated-label">
-          Updated <span id="updated-at">—</span>
-        </div>
-
-        <button id="refresh-button" class="button secondary">
-          Refresh
-        </button>
-      </div>
-    </header>
-
-    <main>
-
-      <section class="hero-grid">
-
-        <article class="panel score-panel">
-          <div class="panel-heading">
-            <div>
-              <span class="eyebrow">MARKET BIAS</span>
-              <h2>Overall signal</h2>
+                <div class="brand-copy">
+                    <h1>Market Pulse</h1>
+                    <p>Indian markets intelligence</p>
+                </div>
             </div>
 
-            <span id="coverage-badge" class="badge neutral">Coverage —</span>
-          </div>
+            <div class="header-actions">
 
-          <div class="score-layout">
-            <div id="score-gauge" class="score-gauge">
-              <div class="gauge-inner">
-                <span id="overall-score" class="score-number">—</span>
-                <span class="score-caption">out of 100</span>
-              </div>
+                <div class="market-status">
+                    <span class="status-dot"></span>
+                    <span id="marketStatus">Loading market status</span>
+                </div>
+
+                <button
+                    id="refreshButton"
+                    class="icon-button"
+                    type="button"
+                    aria-label="Refresh dashboard"
+                    title="Refresh dashboard"
+                >
+                    <span id="refreshIcon">↻</span>
+                </button>
+
             </div>
 
-            <div class="score-details">
-              <span id="overall-label" class="signal-label">Loading…</span>
-              <p id="score-description">
-                Waiting for the latest market report.
-              </p>
-
-              <div class="score-legend">
-                <span><i class="dot bullish"></i> Bullish</span>
-                <span><i class="dot neutral-dot"></i> Neutral</span>
-                <span><i class="dot bearish"></i> Bearish</span>
-              </div>
-            </div>
-          </div>
-        </article>
-
-        <article class="panel index-card">
-          <div class="panel-heading">
-            <div>
-              <span class="eyebrow">NIFTY 50</span>
-              <h2>Primary index</h2>
-            </div>
-
-            <span class="index-symbol">NSE</span>
-          </div>
-
-          <div id="nifty-price" class="index-price">—</div>
-          <div id="nifty-change" class="index-change">—</div>
-
-          <div class="mini-metrics">
-            <div>
-              <span>RSI · 15m</span>
-              <strong id="nifty-rsi">—</strong>
-            </div>
-
-            <div>
-              <span>Trend · 15m</span>
-              <strong id="nifty-trend">—</strong>
-            </div>
-          </div>
-        </article>
-
-        <article class="panel index-card">
-          <div class="panel-heading">
-            <div>
-              <span class="eyebrow">BANK NIFTY</span>
-              <h2>Banking index</h2>
-            </div>
-
-            <span class="index-symbol">NSE</span>
-          </div>
-
-          <div id="bank-price" class="index-price">—</div>
-          <div id="bank-change" class="index-change">—</div>
-
-          <div class="mini-metrics">
-            <div>
-              <span>RSI · 15m</span>
-              <strong id="bank-rsi">—</strong>
-            </div>
-
-            <div>
-              <span>Trend · 15m</span>
-              <strong id="bank-trend">—</strong>
-            </div>
-          </div>
-        </article>
-
-        <article class="panel index-card">
-          <div class="panel-heading">
-            <div>
-              <span class="eyebrow">NIFTY MIDCAP</span>
-              <h2>Midcap index</h2>
-            </div>
-
-            <span class="index-symbol">NSE</span>
-          </div>
-
-          <div id="midcap-price" class="index-price">—</div>
-          <div id="midcap-change" class="index-change">—</div>
-
-          <div class="mini-metrics">
-            <div>
-              <span>RSI · 15m</span>
-              <strong id="midcap-rsi">—</strong>
-            </div>
-
-            <div>
-              <span>Trend · 15m</span>
-              <strong id="midcap-trend">—</strong>
-            </div>
-          </div>
-        </article>
-
-      </section>
-
-      <section class="panel chart-panel">
-        <div class="panel-heading chart-heading">
-          <div>
-            <span class="eyebrow">PRICE ACTION</span>
-            <h2 id="chart-title">Nifty 50 candlestick chart</h2>
-          </div>
-
-          <div class="chart-controls">
-            <label>
-              Index
-              <select id="index-selector">
-                <option value="Nifty 50">Nifty 50</option>
-                <option value="Bank Nifty">Bank Nifty</option>
-                <option value="Nifty Midcap">Nifty Midcap</option>
-              </select>
-            </label>
-
-            <label>
-              Timeframe
-              <select id="timeframe-selector">
-                <option value="15m">15 minutes</option>
-                <option value="30m">30 minutes</option>
-                <option value="1h">1 hour</option>
-                <option value="Daily">Daily</option>
-              </select>
-            </label>
-          </div>
-        </div>
-
-        <div class="chart-legend">
-          <span><i class="legend-line sma20"></i>SMA 20</span>
-          <span><i class="legend-line sma50"></i>SMA 50</span>
-          <span><i class="legend-line sma100"></i>SMA 100</span>
-        </div>
-
-        <div id="candlestick-chart" class="main-chart"></div>
-
-        <div class="subchart-heading">
-          <h3>RSI (14)</h3>
-          <span id="rsi-current">—</span>
-        </div>
-
-        <div id="rsi-chart" class="rsi-chart"></div>
-
-        <div class="subchart-heading">
-          <h3>Volume</h3>
-        </div>
-
-        <div id="volume-chart" class="volume-chart"></div>
-      </section>
-
-      <section class="two-column-grid">
-
-        <article class="panel">
-          <div class="panel-heading">
-            <div>
-              <span class="eyebrow">DERIVATIVES</span>
-              <h2>Nifty options overview</h2>
-            </div>
-
-            <span id="options-source" class="badge neutral">—</span>
-          </div>
-
-          <div class="options-summary">
-            <div>
-              <span>Spot</span>
-              <strong id="option-spot">—</strong>
-            </div>
-
-            <div>
-              <span>ATM strike</span>
-              <strong id="option-atm">—</strong>
-            </div>
-
-            <div>
-              <span>Total PCR</span>
-              <strong id="option-pcr">—</strong>
-            </div>
-
-            <div>
-              <span>Near ATM PCR</span>
-              <strong id="option-zone-pcr">—</strong>
-            </div>
-          </div>
-
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Metric</th>
-                  <th>Call (CE)</th>
-                  <th>Put (PE)</th>
-                </tr>
-              </thead>
-
-              <tbody>
-                <tr>
-                  <td>Premium</td>
-                  <td id="ce-premium">—</td>
-                  <td id="pe-premium">—</td>
-                </tr>
-
-                <tr>
-                  <td>Premium change</td>
-                  <td id="ce-premium-change">—</td>
-                  <td id="pe-premium-change">—</td>
-                </tr>
-
-                <tr>
-                  <td>Open interest</td>
-                  <td id="ce-oi">—</td>
-                  <td id="pe-oi">—</td>
-                </tr>
-
-                <tr>
-                  <td>OI change</td>
-                  <td id="ce-oi-change">—</td>
-                  <td id="pe-oi-change">—</td>
-                </tr>
-
-                <tr>
-                  <td>Buildup</td>
-                  <td id="ce-buildup">—</td>
-                  <td id="pe-buildup">—</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-
-          <div class="support-resistance">
-            <div class="level-box resistance-box">
-              <span>Max Call OI · Resistance</span>
-              <strong id="option-resistance">—</strong>
-            </div>
-
-            <div class="level-box support-box">
-              <span>Max Put OI · Support</span>
-              <strong id="option-support">—</strong>
-            </div>
-          </div>
-
-          <p class="muted small">
-            OI walls and buildup classifications are positioning indicators,
-            not guaranteed support or resistance.
-          </p>
-        </article>
-
-        <article class="panel">
-          <div class="panel-heading">
-            <div>
-              <span class="eyebrow">TECHNICAL SUMMARY</span>
-              <h2>Trend by timeframe</h2>
-            </div>
-          </div>
-
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Timeframe</th>
-                  <th>Close</th>
-                  <th>Change</th>
-                  <th>RSI</th>
-                  <th>Signal</th>
-                </tr>
-              </thead>
-
-              <tbody id="timeframe-table">
-                <tr>
-                  <td colspan="5">Waiting for data…</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-
-          <div class="panel-subsection">
-            <h3>Daily pivots</h3>
-
-            <div id="pivot-grid" class="pivot-grid">
-              <div class="level-box"><span>R2</span><strong>—</strong></div>
-              <div class="level-box"><span>R1</span><strong>—</strong></div>
-              <div class="level-box"><span>Pivot</span><strong>—</strong></div>
-              <div class="level-box"><span>S1</span><strong>—</strong></div>
-              <div class="level-box"><span>S2</span><strong>—</strong></div>
-            </div>
-          </div>
-        </article>
-
-      </section>
-
-      <section class="panel">
-        <div class="panel-heading">
-          <div>
-            <span class="eyebrow">GLOBAL MARKETS</span>
-            <h2>International market snapshot</h2>
-          </div>
-        </div>
-
-        <div id="global-market-grid" class="global-grid">
-          <div class="empty-state">Loading global markets…</div>
-        </div>
-      </section>
-
-      <section class="two-column-grid">
-
-        <article class="panel">
-          <div class="panel-heading">
-            <div>
-              <span class="eyebrow">RECENT PERFORMANCE</span>
-              <h2>Last seven sessions</h2>
-            </div>
-          </div>
-
-          <div id="performance-grid" class="performance-grid">
-            <div class="empty-state">Loading performance…</div>
-          </div>
-        </article>
-
-        <article class="panel">
-          <div class="panel-heading">
-            <div>
-              <span class="eyebrow">SCORING MODEL</span>
-              <h2>Signal contribution</h2>
-            </div>
-          </div>
-
-          <div id="score-breakdown" class="score-breakdown">
-            <div class="empty-state">Loading score components…</div>
-          </div>
-        </article>
-
-      </section>
-
-      <section class="panel">
-        <div class="panel-heading">
-          <div>
-            <span class="eyebrow">MARKET HISTORY</span>
-            <h2>Historical snapshots</h2>
-          </div>
-
-          <label class="history-control">
-            Snapshot
-            <select id="history-selector">
-              <option value="latest">Latest report</option>
-            </select>
-          </label>
-        </div>
-
-        <div class="history-summary">
-          <div>
-            <span>Selected report</span>
-            <strong id="history-selected-date">Latest</strong>
-          </div>
-
-          <div>
-            <span>Overall score</span>
-            <strong id="history-selected-score">—</strong>
-          </div>
-
-          <div>
-            <span>Signal</span>
-            <strong id="history-selected-label">—</strong>
-          </div>
-        </div>
-
-        <div id="history-chart" class="history-chart"></div>
-
-        <p class="muted small">
-          Historical reports are snapshots of what the model calculated at
-          the time. They are not proof of future performance.
-        </p>
-      </section>
-
-      <section class="panel">
-        <div class="panel-heading">
-          <div>
-            <span class="eyebrow">NEWS MONITOR</span>
-            <h2>Market headlines</h2>
-          </div>
-
-          <span id="news-sentiment" class="badge neutral">Sentiment —</span>
-        </div>
-
-        <div id="news-list" class="news-list">
-          <div class="empty-state">Loading news…</div>
-        </div>
-      </section>
-
-      <footer class="footer">
-        <p>Market Intelligence · Built with Python, Fyers and GitHub Pages.</p>
-        <p id="disclaimer">
-          Rule-based indicators, not investment advice.
-        </p>
-      </footer>
-
-    </main>
-  </div>
-
-  <script src="./app.js"></script>
+        </header>
+
+
+        <!-- Main content -->
+        <main class="main-content">
+
+            <!-- Page heading -->
+            <section class="page-heading">
+
+                <div>
+                    <div class="eyebrow">MARKET OVERVIEW</div>
+
+                    <h2>Market Dashboard</h2>
+
+                    <p class="muted">
+                        Technical trends, derivatives, global markets and sentiment.
+                    </p>
+                </div>
+
+                <div class="updated-box">
+                    <span class="muted">Last analysis</span>
+                    <strong id="lastUpdated">Loading...</strong>
+                    <span id="dataStatus" class="data-status">Connecting</span>
+                </div>
+
+            </section>
+
+
+            <!-- Overall market score -->
+            <section class="overall-grid">
+
+                <article class="panel score-panel">
+
+                    <div class="panel-topline">
+                        <span class="eyebrow">OVERALL MARKET BIAS</span>
+                        <span class="live-badge">ANALYSIS</span>
+                    </div>
+
+                    <div class="score-main">
+
+                        <div>
+                            <div id="overallScore" class="overall-score">
+                                --
+                            </div>
+
+                            <div id="overallLabel" class="overall-label">
+                                Waiting for data
+                            </div>
+                        </div>
+
+                        <div id="scoreGauge" class="score-gauge">
+                            <div class="gauge-inner">
+                                <span id="scoreGaugeValue">--</span>
+                                <small>/100</small>
+                            </div>
+                        </div>
+
+                    </div>
+
+                    <div class="score-track">
+                        <div id="scoreTrackFill" class="score-track-fill"></div>
+                    </div>
+
+                    <div class="score-footer">
+                        <span>Bearish</span>
+                        <span>Neutral</span>
+                        <span>Bullish</span>
+                    </div>
+
+                    <p id="scoreNote" class="muted small-text">
+                        Waiting for analysis data.
+                    </p>
+
+                </article>
+
+
+                <article class="panel summary-panel">
+
+                    <div class="panel-heading">
+                        <div>
+                            <span class="eyebrow">ANALYSIS QUALITY</span>
+                            <h3>Coverage</h3>
+                        </div>
+                    </div>
+
+                    <div class="coverage-value">
+                        <span id="coverageValue">--%</span>
+                    </div>
+
+                    <div class="coverage-track">
+                        <div id="coverageFill" class="coverage-fill"></div>
+                    </div>
+
+                    <p class="muted small-text">
+                        Percentage of weighted analysis inputs available.
+                    </p>
+
+                    <div class="summary-divider"></div>
+
+                    <div class="summary-row">
+                        <span>Data timestamp</span>
+                        <strong id="dataTimestamp">--</strong>
+                    </div>
+
+                    <div class="summary-row">
+                        <span>Market session</span>
+                        <strong id="sessionSummary">--</strong>
+                    </div>
+
+                </article>
+
+            </section>
+
+
+            <!-- Index cards -->
+            <section class="section">
+
+                <div class="section-heading">
+                    <div>
+                        <div class="eyebrow">INDIAN INDICES</div>
+                        <h2>Market Snapshot</h2>
+                    </div>
+                </div>
+
+                <div id="indexCards" class="index-grid">
+
+                    <div class="loading-card">
+                        Loading index data...
+                    </div>
+
+                </div>
+
+            </section>
+
+
+            <!-- Charts -->
+            <section class="section">
+
+                <div class="section-heading chart-section-heading">
+
+                    <div>
+                        <div class="eyebrow">TECHNICAL ANALYSIS</div>
+                        <h2>Price Action</h2>
+                    </div>
+
+                    <div class="chart-controls">
+
+                        <label class="sr-only" for="indexSelect">
+                            Select market index
+                        </label>
+
+                        <select id="indexSelect" class="control-select">
+                            <option value="Nifty 50">Nifty 50</option>
+                            <option value="Bank Nifty">Bank Nifty</option>
+                            <option value="Nifty Midcap">Nifty Midcap</option>
+                        </select>
+
+                        <div
+                            id="timeframeButtons"
+                            class="timeframe-buttons"
+                            role="group"
+                            aria-label="Chart timeframe"
+                        >
+                            <button type="button" data-timeframe="15m">15m</button>
+                            <button type="button" data-timeframe="30m">30m</button>
+                            <button type="button" data-timeframe="1h">1H</button>
+                            <button type="button" data-timeframe="Daily" class="active">
+                                1D
+                            </button>
+                        </div>
+
+                    </div>
+
+                </div>
+
+
+                <article class="panel chart-panel">
+
+                    <div class="chart-summary">
+
+                        <div>
+                            <span id="chartInstrument" class="chart-instrument">
+                                Nifty 50
+                            </span>
+
+                            <div class="chart-price-line">
+                                <strong id="chartPrice">--</strong>
+                                <span id="chartChange" class="change-pill">
+                                    --
+                                </span>
+                            </div>
+                        </div>
+
+                        <div class="chart-legend">
+                            <span><i class="legend-dot sma20"></i>SMA 20</span>
+                            <span><i class="legend-dot sma50"></i>SMA 50</span>
+                            <span><i class="legend-dot sma100"></i>SMA 100</span>
+                        </div>
+
+                    </div>
+
+                    <div id="priceChart" class="price-chart">
+                        <div class="chart-placeholder">
+                            Loading chart...
+                        </div>
+                    </div>
+
+                    <div class="chart-subheading">
+                        <span>VOLUME</span>
+                        <span id="volumeLabel">Trading activity</span>
+                    </div>
+
+                    <div id="volumeChart" class="volume-chart"></div>
+
+                    <div class="chart-subheading">
+                        <span>RELATIVE STRENGTH INDEX</span>
+                        <span>RSI 14</span>
+                    </div>
+
+                    <div id="rsiChart" class="rsi-chart"></div>
+
+                    <div class="chart-footer">
+                        <span>Drag to pan · Pinch or scroll to zoom</span>
+                        <span id="candleCount">-- candles</span>
+                    </div>
+
+                </article>
+
+            </section>
+
+
+            <!-- Technical indicators -->
+            <section class="section">
+
+                <div class="section-heading">
+                    <div>
+                        <div class="eyebrow">TECHNICAL INDICATORS</div>
+                        <h2>Trend Analysis</h2>
+                    </div>
+                </div>
+
+                <div id="technicalCards" class="technical-grid">
+
+                    <div class="loading-card">
+                        Loading indicators...
+                    </div>
+
+                </div>
+
+            </section>
+
+
+            <!-- Options -->
+            <section class="section">
+
+                <div class="section-heading">
+                    <div>
+                        <div class="eyebrow">DERIVATIVES</div>
+                        <h2>Options Intelligence</h2>
+                    </div>
+                </div>
+
+                <div class="options-grid">
+
+                    <article class="panel options-summary-panel">
+
+                        <div class="panel-heading">
+                            <div>
+                                <span class="eyebrow">PUT-CALL RATIO</span>
+                                <h3>Market positioning</h3>
+                            </div>
+                        </div>
+
+                        <div id="pcrValue" class="pcr-value">--</div>
+
+                        <div id="pcrLabel" class="muted small-text">
+                            Waiting for options data
+                        </div>
+
+                        <div class="summary-divider"></div>
+
+                        <div class="summary-row">
+                            <span>Near-ATM PCR</span>
+                            <strong id="nearAtmPcr">--</strong>
+                        </div>
+
+                        <div class="summary-row">
+                            <span>ATM strike</span>
+                            <strong id="atmStrike">--</strong>
+                        </div>
+
+                    </article>
+
+
+                    <article class="panel support-panel">
+
+                        <div class="panel-heading">
+                            <div>
+                                <span class="eyebrow">KEY LEVELS</span>
+                                <h3>Support & Resistance</h3>
+                            </div>
+                        </div>
+
+                        <div class="level-row resistance-level">
+                            <span class="level-indicator"></span>
+
+                            <div>
+                                <small>Resistance</small>
+                                <strong id="resistanceValue">--</strong>
+                            </div>
+                        </div>
+
+                        <div class="level-row support-level">
+                            <span class="level-indicator"></span>
+
+                            <div>
+                                <small>Support</small>
+                                <strong id="supportValue">--</strong>
+                            </div>
+                        </div>
+
+                        <p id="optionsSource" class="muted small-text">
+                            Options data source: --
+                        </p>
+
+                    </article>
+
+                </div>
+
+
+                <div class="section-subheading">
+                    <h3>ATM Call / Put Snapshot</h3>
+                </div>
+
+                <div id="optionsCards" class="options-cards-grid">
+
+                    <div class="loading-card">
+                        Loading options...
+                    </div>
+
+                </div>
+
+            </section>
+
+
+            <!-- Global markets -->
+            <section class="section">
+
+                <div class="section-heading">
+                    <div>
+                        <div class="eyebrow">GLOBAL MARKETS</div>
+                        <h2>International Pulse</h2>
+                    </div>
+                </div>
+
+                <div id="globalCards" class="global-grid">
+
+                    <div class="loading-card">
+                        Loading global markets...
+                    </div>
+
+                </div>
+
+            </section>
+
+
+            <!-- Seven-day performance -->
+            <section class="section">
+
+                <div class="section-heading">
+                    <div>
+                        <div class="eyebrow">RECENT PERFORMANCE</div>
+                        <h2>Seven-Session Trend</h2>
+                    </div>
+                </div>
+
+                <div id="weeklyCards" class="weekly-grid">
+
+                    <div class="loading-card">
+                        Loading performance...
+                    </div>
+
+                </div>
+
+            </section>
+
+
+            <!-- Score breakdown -->
+            <section class="section">
+
+                <div class="section-heading">
+                    <div>
+                        <div class="eyebrow">MODEL TRANSPARENCY</div>
+                        <h2>Score Breakdown</h2>
+                    </div>
+                </div>
+
+                <article class="panel breakdown-panel">
+
+                    <div class="breakdown-header">
+                        <span>Analysis factor</span>
+                        <span>Contribution</span>
+                    </div>
+
+                    <div id="scoreBreakdown">
+
+                        <div class="loading-card">
+                            Loading score breakdown...
+                        </div>
+
+                    </div>
+
+                </article>
+
+            </section>
+
+
+            <!-- News -->
+            <section class="section">
+
+                <div class="section-heading">
+                    <div>
+                        <div class="eyebrow">MARKET NEWS</div>
+                        <h2>News & Sentiment</h2>
+                    </div>
+                </div>
+
+                <div id="newsSummary" class="news-summary"></div>
+
+                <div id="newsCards" class="news-grid">
+
+                    <div class="loading-card">
+                        Loading news...
+                    </div>
+
+                </div>
+
+            </section>
+
+
+            <!-- History -->
+            <section class="section">
+
+                <div class="section-heading">
+                    <div>
+                        <div class="eyebrow">HISTORICAL DATA</div>
+                        <h2>Previous Analyses</h2>
+                    </div>
+                </div>
+
+                <article class="panel history-panel">
+
+                    <p class="muted small-text">
+                        Select a previous snapshot to inspect the market analysis
+                        captured during that run.
+                    </p>
+
+                    <div id="historyList" class="history-list">
+
+                        <div class="loading-card">
+                            Loading history...
+                        </div>
+
+                    </div>
+
+                </article>
+
+            </section>
+
+
+            <!-- Disclaimer -->
+            <section class="disclaimer-panel">
+
+                <strong>Important disclaimer</strong>
+
+                <p>
+                    This dashboard provides rule-based market indicators and
+                    informational analysis only. It is not financial advice
+                    or a recommendation to buy or sell any security or derivative.
+                    Market conditions can change rapidly. Verify prices and data
+                    independently before making trading decisions.
+                </p>
+
+            </section>
+
+        </main>
+
+
+        <!-- Footer -->
+        <footer class="footer">
+
+            <span>Market Pulse</span>
+
+            <span>Designed for mobile and desktop</span>
+
+            <button id="backToTop" type="button" class="back-to-top">
+                Back to top ↑
+            </button>
+
+        </footer>
+
+    </div>
+
+
+    <!-- Accessible notification area -->
+    <div
+        id="toast"
+        class="toast"
+        role="status"
+        aria-live="polite"
+    ></div>
+
 </body>
 </html>

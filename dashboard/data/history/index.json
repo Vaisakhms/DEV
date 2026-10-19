@@ -1,5 +1,13 @@
 [
   {
+    "file": "20261019-105738.json",
+    "generated_at": "2026-10-19T10:57:38.241207+05:30",
+    "generated_at_ist": "2026-10-19 10:57:38",
+    "score": 17.33858507819368,
+    "label": "BULLISH 🟢",
+    "nifty_close": 23066.45
+  },
+  {
     "file": "20261019-093116.json",
     "generated_at": "2026-10-19T09:31:16.444348+05:30",
     "generated_at_ist": "2026-10-19 09:31:16",
@@ -84,14 +92,6 @@
     "generated_at": "2026-10-16T19:14:56.443833+05:30",
     "generated_at_ist": "2026-10-16 19:14:56",
     "score": 44.10908609759316,
-    "label": "STRONG BULLISH 🟢🟢",
-    "nifty_close": 23146.15
-  },
-  {
-    "file": "20261016-185153.json",
-    "generated_at": "2026-10-16T18:51:53.610000+05:30",
-    "generated_at_ist": "2026-10-16 18:51:53",
-    "score": 45.47383128292238,
     "label": "STRONG BULLISH 🟢🟢",
     "nifty_close": 23146.15
   }

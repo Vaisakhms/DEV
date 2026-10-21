@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
 
   schedule:
-    # Morning global market perspective: 8:30 AM IST, Monday-Friday
+    # Morning global market perspective: 8:30 AM IST, Monday-Friday - test
     - cron: "30 8 * * 1-5"
       timezone: "Asia/Kolkata"
 

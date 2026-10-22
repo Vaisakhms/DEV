@@ -76,6 +76,7 @@ INDICES = {
     "Nifty 50": "NSE:NIFTY50-INDEX",
     "Bank Nifty": "NSE:NIFTYBANK-INDEX",
     "Nifty Midcap": "NSE:NIFTYMIDCAP50-INDEX",
+    "Nifty 100": "NSE:NIFTY100-INDEX"
 }
 
 EQUITY_TICKERS = [

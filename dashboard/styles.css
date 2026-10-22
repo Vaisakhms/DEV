@@ -2121,3 +2121,46 @@ a:hover {
     }
 
 }
+/* Price Action Decision Panel */
+#priceActionDecision {
+  margin-top: 20px;
+}
+
+#criteriaSummary {
+  overflow-x: auto;
+  margin-bottom: 20px;
+}
+
+#criteriaSummary table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+#criteriaSummary th,
+#criteriaSummary td {
+  padding: 12px;
+  border-bottom: 1px solid var(--border-color, #333);
+  text-align: left;
+}
+
+#niftyTradeDecision {
+  padding: 18px;
+  border-radius: 12px;
+  background: var(--card-bg, #171b24);
+}
+
+#niftyTradeDecision h3 {
+  margin-top: 0;
+}
+
+#niftyTradeDecision .buy-call {
+  color: #22c55e;
+}
+
+#niftyTradeDecision .buy-put {
+  color: #ef4444;
+}
+
+#niftyTradeDecision .wait {
+  color: #facc15;
+}

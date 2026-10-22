@@ -1063,6 +1063,194 @@ async function renderHistory() {
     }
 }
 
+function renderPriceActionDecision(data) {
+    const criteria = $("criteriaSummary");
+    const decision = $("niftyTradeDecision");
+
+    if (!criteria || !decision) return;
+
+    const indices = data.indices || {};
+    const options = data.options || {};
+
+    const requiredIndices = [
+        "Nifty 50",
+        "Bank Nifty",
+        "Nifty Midcap",
+        "Nifty 100"
+    ];
+
+    const rows = requiredIndices.map(name => {
+        const item = indices[name] || {};
+        const frames = item.timeframes || {};
+        const daily = frames.Daily || {};
+        const intraday = frames["15m"] || {};
+        const close = number(intraday.close, number(daily.close));
+        const sma = intraday.sma || daily.sma || {};
+        const sma20 = number(sma["20"]);
+        const sma50 = number(sma["50"]);
+        const sma100 = number(sma["100"]);
+        const label = intraday.label || daily.label || "Unavailable";
+
+        let trend = label;
+
+        if (close !== null && sma20 !== null && sma50 !== null) {
+            if (close > sma20 && sma20 > sma50) trend = "Bullish";
+            else if (close < sma20 && sma20 < sma50) trend = "Bearish";
+            else trend = "Mixed";
+        }
+
+        return {
+            name,
+            close,
+            trend,
+            sma20,
+            sma50,
+            sma100,
+            available: close !== null
+        };
+    });
+
+    criteria.innerHTML = `
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Index</th>
+                        <th>Price</th>
+                        <th>15m Trend</th>
+                        <th>SMA 20</th>
+                        <th>SMA 50</th>
+                        <th>SMA 100</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${rows.map(row => `
+                        <tr>
+                            <td>${escapeHtml(row.name)}</td>
+                            <td>${formatNumber(row.close)}</td>
+                            <td>
+                                <span class="status-pill ${sentimentClass(row.trend)}">
+                                    ${escapeHtml(row.trend)}
+                                </span>
+                            </td>
+                            <td>${formatNumber(row.sma20)}</td>
+                            <td>${formatNumber(row.sma50)}</td>
+                            <td>${formatNumber(row.sma100)}</td>
+                        </tr>
+                    `).join("")}
+                </tbody>
+            </table>
+        </div>
+    `;
+
+    const nifty = rows.find(row => row.name === "Nifty 50");
+    const atm = number(options.atm);
+    const spot = nifty?.close;
+    const support = number(options.support);
+    const resistance = number(options.resistance);
+    const pcr = number(options.zone_pcr, number(options.pcr));
+    const ce = options.ce || {};
+    const pe = options.pe || {};
+
+    const bullishCount = rows.filter(row => row.available && row.trend === "Bullish").length;
+    const bearishCount = rows.filter(row => row.available && row.trend === "Bearish").length;
+    const availableCount = rows.filter(row => row.available).length;
+
+    const ceSentiment = optionOiSentiment(ce.buildup, "call");
+    const peSentiment = optionOiSentiment(pe.buildup, "put");
+
+    const reasons = [];
+    const conflicts = [];
+
+    if (availableCount < 4) {
+        conflicts.push("One or more required indices have missing data.");
+    }
+
+    if (bullishCount >= 3) reasons.push(`${bullishCount} of 4 indices show bullish trend.`);
+    if (bearishCount >= 3) reasons.push(`${bearishCount} of 4 indices show bearish trend.`);
+
+    if (spot !== null && support !== null && spot <= support) {
+        reasons.push("Nifty is at or below the listed support level.");
+    }
+
+    if (spot !== null && resistance !== null && spot >= resistance) {
+        reasons.push("Nifty is at or above the listed resistance level.");
+    }
+
+    if (ceSentiment.label === "Bearish" && peSentiment.label === "Bearish") {
+        conflicts.push("ATM option positioning does not confirm a directional entry.");
+    }
+
+    if (bullishCount >= 3 && bearishCount >= 1) {
+        conflicts.push("Index trends are not fully aligned.");
+    }
+
+    if (bearishCount >= 3 && bullishCount >= 1) {
+        conflicts.push("Index trends are not fully aligned.");
+    }
+
+    let signal = "WAIT";
+    let signalClass = "wait";
+
+    const enoughData = availableCount === 4;
+    const bullishOptions = ceSentiment.label === "Bullish" || peSentiment.label === "Bullish";
+    const bearishOptions = ceSentiment.label === "Bearish" || peSentiment.label === "Bearish";
+    const nearResistance = spot !== null && resistance !== null && spot >= resistance * 0.998;
+    const nearSupport = spot !== null && support !== null && spot <= support * 1.002;
+
+    if (
+        enoughData &&
+        bullishCount >= 3 &&
+        bearishCount === 0 &&
+        bullishOptions &&
+        !nearResistance &&
+        conflicts.length === 0
+    ) {
+        signal = "BUY ATM CE BIAS";
+        signalClass = "buy-call";
+    } else if (
+        enoughData &&
+        bearishCount >= 3 &&
+        bullishCount === 0 &&
+        bearishOptions &&
+        !nearSupport &&
+        conflicts.length === 0
+    ) {
+        signal = "BUY ATM PE BIAS";
+        signalClass = "buy-put";
+    }
+
+    decision.innerHTML = `
+        <h3>Nifty ATM Trade Decision</h3>
+        <div class="${signalClass}" style="font-size:1.5rem;font-weight:700;margin:12px 0">
+            ${signal}
+        </div>
+        <div class="summary-row">
+            <span>Nifty spot</span>
+            <strong>${formatNumber(spot)}</strong>
+        </div>
+        <div class="summary-row">
+            <span>ATM strike</span>
+            <strong>${formatNumber(atm, 0)}</strong>
+        </div>
+        <div class="summary-row">
+            <span>Support / Resistance</span>
+            <strong>${formatNumber(support, 0)} / ${formatNumber(resistance, 0)}</strong>
+        </div>
+        <div class="summary-row">
+            <span>Index trend alignment</span>
+            <strong>${bullishCount} bullish · ${bearishCount} bearish · ${availableCount} available</strong>
+        </div>
+        <div class="summary-row">
+            <span>ATM CE / PE positioning</span>
+            <strong>${ceSentiment.label} / ${peSentiment.label}</strong>
+        </div>
+        <p><strong>Reasons:</strong> ${escapeHtml(reasons.join(" ") || "No strong directional confirmation.")}</p>
+        <p><strong>Warnings:</strong> ${escapeHtml(conflicts.join(" ") || "No major index-alignment conflict detected.")}</p>
+        <p class="muted small-text">This is a rule-based bias, not a guaranteed trade. Confirm price action before entering.</p>
+    `;
+}
+
 function renderDashboard(data) {
     if (!data || typeof data !== "object") {
         throw new Error("The market data file is not a valid object.");
@@ -1075,6 +1263,7 @@ function renderDashboard(data) {
     renderTechnicalCards(data);
     renderWeeklyCards(data);
     renderOptions(data);
+    renderPriceActionDecision(data);
     renderGlobalMarkets(data);
     renderBreakdown(data);
     renderNews(data);

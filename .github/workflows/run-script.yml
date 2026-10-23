@@ -6,13 +6,8 @@ on:
   push:
     branches:
       - main
-    paths:
-      - .github/workflows/run-script.yml
-      - TG_Alert/test/notify.py
-      - TG_Alert/test/strategy_engine.py
-      - dashboard/app.js
-      - dashboard/index.html
-      - dashboard/styles.css
+    paths-ignore:
+      - dashboard/data/**
 
   schedule:
     # GitHub Actions scheduled workflows have a 5-minute minimum interval.

@@ -3,6 +3,7 @@ import unittest
 
 from strategy_engine import (
     _classify,
+    _evaluation_window,
     _leg_bias,
     _oi_state,
     _trend,
@@ -12,6 +13,18 @@ from strategy_engine import (
 
 
 class StrategyRuleTests(unittest.TestCase):
+    def test_evaluation_window_uses_ist_weekday_hours(self):
+        ist = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
+        self.assertTrue(
+            _evaluation_window(datetime.datetime(2026, 10, 23, 10, 0, tzinfo=ist))
+        )
+        self.assertFalse(
+            _evaluation_window(datetime.datetime(2026, 10, 23, 20, 0, tzinfo=ist))
+        )
+        self.assertFalse(
+            _evaluation_window(datetime.datetime(2026, 10, 24, 10, 0, tzinfo=ist))
+        )
+
     def test_trend_requires_close_sma20_sma50_order(self):
         self.assertEqual(
             _trend({"close": 110, "sma": {20: 105, 50: 100}}),

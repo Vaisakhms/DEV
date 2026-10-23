@@ -17,6 +17,14 @@ def _number(value):
     return result if result == result and abs(result) != float("inf") else None
 
 
+def _evaluation_window(now):
+    local_now = now.astimezone(IST)
+    return (
+        local_now.weekday() < 5
+        and datetime.time(9, 20) <= local_now.time() <= datetime.time(15, 15)
+    )
+
+
 def _sma_values(frame):
     sma = frame.get("sma") or {}
     return {
@@ -159,6 +167,8 @@ def _leg_bias(buildup, option_type):
 
 
 def _oi_state(options, previous, now):
+    if not _evaluation_window(now):
+        return None
     if not options or options.get("source") != "Fyers":
         return None
     if not previous or previous.get("expiry") != options.get("expiry"):
@@ -602,10 +612,7 @@ def evaluate_strategy(now, indices, pivots, options, previous, state,
 
     local_time = now.astimezone(IST).time()
     expiry_day = bool(options and options.get("expiry_date") == today)
-    evaluation_window = (
-        now.weekday() < 5
-        and datetime.time(9, 20) <= local_time <= datetime.time(15, 15)
-    )
+    evaluation_window = _evaluation_window(now)
     entry_window = (
         evaluation_window
         and datetime.time(9, 30) <= local_time <= datetime.time(14, 45)

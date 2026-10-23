@@ -763,6 +763,10 @@ function renderPriceActionDecision(data) {
 
     const strategy = data.strategy || {};
     const oi = strategy.oi || {};
+    const latestPcr = number(oi.pcr) ?? number(data.options?.pcr);
+    const pcrDisplay = latestPcr === null
+        ? "Unavailable"
+        : `${latestPcr.toFixed(2)}${number(oi.pcr) === null ? " (snapshot)" : ""}`;
     const signal = ["BUY ATM CE", "BUY ATM PE"].includes(strategy.decision)
         ? strategy.decision
         : "WAIT";
@@ -834,7 +838,7 @@ function renderPriceActionDecision(data) {
         </div>
         <div class="summary-row">
             <span>OI verdict / PCR / flow</span>
-            <strong>${escapeHtml(oi.verdict || "Unavailable")} / ${formatNumber(oi.pcr, 2)} / ${escapeHtml(oi.flow || "Unavailable")}</strong>
+            <strong>${escapeHtml(oi.verdict || "Unavailable")} / ${escapeHtml(pcrDisplay)} / ${escapeHtml(oi.flow || "Unavailable")}</strong>
         </div>
         <div class="summary-row">
             <span>Nearest major level</span>

@@ -114,6 +114,53 @@ def _event(candles, levels, near_percent):
     return None
 
 
+def _event_confirms_level(event, kind, level):
+    if not event or event.get("kind") != kind:
+        return False
+    event_level = event.get("level") or {}
+    event_price = _number(event_level.get("price"))
+    level_price = _number(level.get("price"))
+    return (
+        event_level.get("name") == level.get("name")
+        and event_price is not None
+        and level_price is not None
+        and abs(event_price - level_price) <= max(abs(level_price), 1) * 1e-9
+    )
+
+
+def _level_veto(direction, price, nearest_resistance, nearest_support,
+                nifty_event):
+    if direction == "CE":
+        if nearest_resistance is None:
+            return True
+        level_price = _number(nearest_resistance.get("price"))
+        if price is None or level_price is None:
+            return True
+        near_unbroken_resistance = (
+            price < level_price
+            and _near(price, level_price, 0.2)
+            and not _event_confirms_level(
+                nifty_event, "resistance breakout", nearest_resistance
+            )
+        )
+        return near_unbroken_resistance
+    if direction == "PE":
+        if nearest_support is None:
+            return True
+        level_price = _number(nearest_support.get("price"))
+        if price is None or level_price is None:
+            return True
+        near_unbroken_support = (
+            price > level_price
+            and _near(price, level_price, 0.2)
+            and not _event_confirms_level(
+                nifty_event, "support breakdown", nearest_support
+            )
+        )
+        return near_unbroken_support
+    return False
+
+
 def _consolidating(frames, bank=False):
     candles = (frames.get("15m") or {}).get("candles") or []
     frame = frames.get("15m") or {}
@@ -352,6 +399,13 @@ def _score_direction(score, direction, points, setups, name):
     setups.append({"name": name, "direction": direction, "points": score})
 
 
+def _all_confirm_direction(events, names, direction):
+    return all(
+        events.get(name) and events[name]["direction"] == direction
+        for name in names
+    )
+
+
 def evaluate_strategy(now, indices, pivots, options, previous, state,
                       market_bias, account_size, lot_size):
     """Evaluate one cycle and return decision, details, and next state."""
@@ -498,21 +552,13 @@ def evaluate_strategy(now, indices, pivots, options, previous, state,
                     _score_direction(1, direction, points, setups, "D: Nifty consolidation breakout")
     confirmed = {name: event for name, event in events.items() if event}
     for direction in ("CE", "PE"):
-        matches = [
-            event for event in confirmed.values()
-            if event["direction"] == direction
-        ]
-        if len(matches) == 4 and len({
-            event["kind"] for event in matches
-        }) == 1:
+        if _all_confirm_direction(confirmed, INDEX_NAMES, direction):
             _score_direction(2, direction, points, setups, "E: all four indices confirm a level")
         nifty_event = events.get("Nifty 50")
-        bank_event = events.get("Bank Nifty")
         if (
-            nifty_event and bank_event
-            and nifty_event["direction"] == direction
-            and bank_event["direction"] == direction
-            and nifty_event["kind"] == bank_event["kind"]
+            _all_confirm_direction(
+                events, ("Nifty 50", "Bank Nifty"), direction
+            )
         ):
             _score_direction(3, direction, points, setups, "F: Nifty and Bank Nifty confirm a level")
         for name in ("Nifty 50", "Bank Nifty"):
@@ -582,33 +628,13 @@ def evaluate_strategy(now, indices, pivots, options, previous, state,
         key=lambda x: abs(x["price"] - nifty_spot),
         default=None,
     ) if nifty_spot is not None else None
-    resistance_breakout = any(
-        event and event["kind"] == "resistance breakout"
-        for event in events.values()
+    entry_filters["level_veto"] = not _level_veto(
+        direction,
+        nifty_spot,
+        nearest_resistance,
+        nearest_support,
+        events.get("Nifty 50"),
     )
-    support_breakdown = any(
-        event and event["kind"] == "support breakdown"
-        for event in events.values()
-    )
-    if direction == "CE" and nearest_resistance and nifty_spot is not None:
-        entry_filters["level_veto"] = not (
-            nifty_spot < nearest_resistance["price"]
-            and _near(nifty_spot, nearest_resistance["price"], 0.2)
-            and not resistance_breakout
-        )
-    elif direction == "PE" and nearest_support and nifty_spot is not None:
-        entry_filters["level_veto"] = not (
-            nifty_spot > nearest_support["price"]
-            and _near(nifty_spot, nearest_support["price"], 0.2)
-            and not support_breakdown
-        )
-    else:
-        entry_filters["level_veto"] = direction is not None
-    if direction is not None and (
-        (direction == "CE" and nearest_resistance is None)
-        or (direction == "PE" and nearest_support is None)
-    ):
-        entry_filters["level_veto"] = True
 
     local_time = now.astimezone(IST).time()
     expiry_day = bool(options and options.get("expiry_date") == today)
@@ -649,10 +675,51 @@ def evaluate_strategy(now, indices, pivots, options, previous, state,
     position_action = None
     # Tracked positions are reference/paper positions; this code does not place orders.
     if open_position:
-        premium = _number((options or {}).get(
-            "ce" if open_position.get("direction") == "CE" else "pe", {}
-        ).get("ltp"))
-        if premium is not None and premium > 0:
+        forced_exit_reason = None
+        entered_at = open_position.get("entered_at")
+        if entered_at:
+            try:
+                if datetime.datetime.fromisoformat(entered_at).date() < now.date():
+                    forced_exit_reason = "overdue time exit"
+            except ValueError:
+                reasons.append("Tracked position entry timestamp is invalid.")
+        if forced_exit_reason is None and (
+            open_position.get("expiry_date") == today
+            and local_time >= datetime.time(14, 45)
+        ):
+            forced_exit_reason = "expiry-day close"
+        elif forced_exit_reason is None and local_time >= datetime.time(15, 0):
+            forced_exit_reason = "time exit"
+        if forced_exit_reason:
+            premium = _number((options or {}).get(
+                "ce" if open_position.get("direction") == "CE" else "pe", {}
+            ).get("ltp"))
+            entry = _number(open_position.get("entry_premium"))
+            if premium is not None and premium > 0 and entry is not None:
+                pnl = (premium - entry) * open_position.get("quantity", 0)
+                state["realized_pnl"] = state.get("realized_pnl", 0.0) + pnl
+                if pnl < 0:
+                    state["losses"] = state.get("losses", 0) + 1
+                change_pct = (premium / entry - 1) * 100
+                stop_pct = _number(open_position.get("stop_pct")) or -20
+                if change_pct <= stop_pct:
+                    state["last_stop_at"] = now.isoformat()
+            else:
+                reasons.append(
+                    "Forced position close recorded without a current premium; "
+                    "realized P&L is unavailable."
+                )
+            state["open_position"] = None
+            position_action = "EXIT " + open_position.get("direction", "")
+            reasons.append(
+                "Tracked reference position exited: "
+                + forced_exit_reason + "."
+            )
+        else:
+            premium = _number((options or {}).get(
+                "ce" if open_position.get("direction") == "CE" else "pe", {}
+            ).get("ltp"))
+        if not forced_exit_reason and premium is not None and premium > 0:
             entry = _number(open_position.get("entry_premium"))
             if entry:
                 change_pct = (premium / entry - 1) * 100
@@ -669,20 +736,6 @@ def evaluate_strategy(now, indices, pivots, options, previous, state,
                     open_position["breakeven"] = True
                 if open_position.get("breakeven") and change_pct <= 0:
                     exit_reason = "trailing stop at entry"
-                if local_time >= datetime.time(15, 0):
-                    exit_reason = "time exit"
-                if (
-                    open_position.get("expiry_date") == today
-                    and local_time >= datetime.time(14, 45)
-                ):
-                    exit_reason = "expiry-day close"
-                entered_at = open_position.get("entered_at")
-                if entered_at:
-                    try:
-                        if datetime.datetime.fromisoformat(entered_at).date() < now.date():
-                            exit_reason = "overdue time exit"
-                    except ValueError:
-                        reasons.append("Tracked position entry timestamp is invalid.")
                 if (
                     direction
                     and direction != open_position.get("direction")
@@ -711,7 +764,7 @@ def evaluate_strategy(now, indices, pivots, options, previous, state,
                     reasons.append("A tracked reference position is open; no additional entry.")
             else:
                 reasons.append("Tracked position entry premium is invalid.")
-        else:
+        elif not forced_exit_reason:
             reasons.append("Open position quote unavailable; position retained.")
 
     stopped_at = state.get("last_stop_at")

@@ -4,7 +4,9 @@ import unittest
 from strategy_engine import (
     _classify,
     _evaluation_window,
+    _all_confirm_direction,
     _leg_bias,
+    _level_veto,
     _oi_state,
     _trend,
     _trigger,
@@ -13,6 +15,98 @@ from strategy_engine import (
 
 
 class StrategyRuleTests(unittest.TestCase):
+    def test_level_setups_accept_different_confirmation_types_in_same_direction(self):
+        events = {
+            "Nifty 50": {"direction": "CE", "kind": "support hold"},
+            "Bank Nifty": {"direction": "CE", "kind": "resistance breakout"},
+            "Nifty Midcap": {"direction": "CE", "kind": "support hold"},
+            "Nifty 100": {"direction": "CE", "kind": "resistance breakout"},
+        }
+        self.assertTrue(
+            _all_confirm_direction(
+                events,
+                ("Nifty 50", "Bank Nifty", "Nifty Midcap", "Nifty 100"),
+                "CE",
+            )
+        )
+        self.assertTrue(
+            _all_confirm_direction(events, ("Nifty 50", "Bank Nifty"), "CE")
+        )
+
+    def test_time_exit_closes_position_without_a_current_premium(self):
+        ist = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
+        now = datetime.datetime(2026, 10, 23, 15, 0, tzinfo=ist)
+        state = {
+            "date": now.date().isoformat(),
+            "trades": 1,
+            "losses": 0,
+            "realized_pnl": 0,
+            "open_position": {
+                "direction": "CE",
+                "entry_premium": 100,
+                "quantity": 25,
+                "expiry_date": "2026-10-27",
+            },
+        }
+        result, next_state = evaluate_strategy(
+            now, {}, {}, None, None, state, 0, 100000, 25
+        )
+        self.assertEqual(result["position_action"], "EXIT CE")
+        self.assertIsNone(next_state["open_position"])
+        self.assertTrue(
+            any("realized P&L is unavailable" in reason for reason in result["reasons"])
+        )
+
+    def test_expiry_day_close_honors_1445_without_a_current_premium(self):
+        ist = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
+        now = datetime.datetime(2026, 10, 27, 14, 45, tzinfo=ist)
+        state = {
+            "date": now.date().isoformat(),
+            "trades": 1,
+            "losses": 0,
+            "realized_pnl": 0,
+            "open_position": {
+                "direction": "PE",
+                "entry_premium": 100,
+                "quantity": 25,
+                "expiry_date": now.date().isoformat(),
+            },
+        }
+        result, next_state = evaluate_strategy(
+            now, {}, {}, None, None, state, 0, 100000, 25
+        )
+        self.assertEqual(result["position_action"], "EXIT PE")
+        self.assertIsNone(next_state["open_position"])
+
+    def test_level_veto_requires_nifty_confirmation_at_the_vetoed_level(self):
+        resistance = {"name": "R1", "price": 100}
+        nifty_breakout = {
+            "kind": "resistance breakout",
+            "level": resistance,
+        }
+        self.assertTrue(
+            _level_veto("CE", 99.9, resistance, None, None)
+        )
+        self.assertFalse(
+            _level_veto("CE", 99.9, resistance, None, nifty_breakout)
+        )
+        self.assertFalse(
+            _level_veto("CE", 99.5, resistance, None, None)
+        )
+
+    def test_support_veto_requires_nifty_breakdown_at_the_vetoed_level(self):
+        support = {"name": "S1", "price": 100}
+        nifty_breakdown = {
+            "kind": "support breakdown",
+            "level": support,
+        }
+        self.assertTrue(
+            _level_veto("PE", 100.1, None, support, None)
+        )
+        self.assertFalse(
+            _level_veto("PE", 100.1, None, support, nifty_breakdown)
+        )
+
     def test_evaluation_window_uses_ist_weekday_hours(self):
         ist = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
         self.assertTrue(

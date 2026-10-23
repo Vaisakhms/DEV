@@ -755,135 +755,83 @@ function renderPriceActionDecision(data) {
         </div>
     `;
 
-    const nifty = rows.find(row => row.name === "Nifty 50");
-    const spot = nifty ? nifty.close : null;
-    const atm = number(options.atm);
-    const support = number(options.support);
-    const resistance = number(options.resistance);
-
-    const ceSentiment = optionOiSentiment(options.ce?.buildup, "call");
-    const peSentiment = optionOiSentiment(options.pe?.buildup, "put");
-
-    const bullishCount = rows.filter(
-        row => row.available && row.trend === "Bullish"
-    ).length;
-
-    const bearishCount = rows.filter(
-        row => row.available && row.trend === "Bearish"
-    ).length;
-
-    const availableCount = rows.filter(row => row.available).length;
-
-    const warnings = [];
-    const reasons = [];
-
-    if (availableCount < 4) {
-        warnings.push("One or more indices have missing data.");
-    }
-
-    if (bullishCount >= 3) {
-        reasons.push(`${bullishCount} of 4 indices show a bullish trend.`);
-    }
-
-    if (bearishCount >= 3) {
-        reasons.push(`${bearishCount} of 4 indices show a bearish trend.`);
-    }
-
-    if (spot !== null && support !== null && spot <= support) {
-        reasons.push("Nifty is at or below the listed support level.");
-    }
-
-    if (spot !== null && resistance !== null && spot >= resistance) {
-        reasons.push("Nifty is at or above the listed resistance level.");
-    }
-
-    if (
-        (bullishCount >= 3 && bearishCount > 0) ||
-        (bearishCount >= 3 && bullishCount > 0)
-    ) {
-        warnings.push("Index trends are not fully aligned.");
-    }
-
-    if (
-        ceSentiment.label === "Bearish" &&
-        peSentiment.label === "Bearish"
-    ) {
-        warnings.push("ATM option positioning does not confirm a directional entry.");
-    }
-
-    const nearResistance =
-        spot !== null &&
-        resistance !== null &&
-        spot >= resistance * 0.998;
-
-    const nearSupport =
-        spot !== null &&
-        support !== null &&
-        spot <= support * 1.002;
-
-    const bullishOptions =
-        ceSentiment.label === "Bullish" ||
-        peSentiment.label === "Bullish";
-
-    const bearishOptions =
-        ceSentiment.label === "Bearish" ||
-        peSentiment.label === "Bearish";
-
-    let signal = "WAIT — MORE CONFIRMATION NEEDED";
-    let signalClass = "wait";
-
-    if (
-        availableCount === 4 &&
-        bullishCount >= 3 &&
-        bearishCount === 0 &&
-        bullishOptions &&
-        !nearResistance &&
-        warnings.length === 0
-    ) {
-        signal = "BULLISH BIAS — ATM CE SETUP";
-        signalClass = "buy-call";
-    } else if (
-        availableCount === 4 &&
-        bearishCount >= 3 &&
-        bullishCount === 0 &&
-        bearishOptions &&
-        !nearSupport &&
-        warnings.length === 0
-    ) {
-        signal = "BEARISH BIAS — ATM PE SETUP";
-        signalClass = "buy-put";
-    }
+    const strategy = data.strategy || {};
+    const oi = strategy.oi || {};
+    const signal = ["BUY ATM CE", "BUY ATM PE"].includes(strategy.decision)
+        ? strategy.decision
+        : "WAIT";
+    const signalClass = signal === "BUY ATM CE"
+        ? "buy-call"
+        : signal === "BUY ATM PE"
+            ? "buy-put"
+            : "wait";
+    const setups = Array.isArray(strategy.matched_setups)
+        ? strategy.matched_setups
+        : [];
+    const reasons = Array.isArray(strategy.reasons) ? strategy.reasons : [];
+    const position = strategy.position || {};
+    const level = strategy.nearest_major_level || {};
+    const levelEvents = Object.entries(strategy.level_events || {})
+        .filter(([, event]) => Boolean(event))
+        .map(([name, event]) =>
+            `${name}: ${event.kind} at ${event.level?.name || "level"} ${formatNumber(event.level?.price)}`
+        );
+    const levelDistance = number(strategy.level_distance_pct);
+    const positionAction = strategy.position_action || "";
 
     decision.innerHTML = `
-        <h3>Nifty ATM Trade Decision</h3>
+        <h3>Nifty ATM Strategy Decision</h3>
         <div class="${signalClass}" style="font-size:1.35rem;font-weight:700;margin:12px 0">
             ${escapeHtml(signal)}
         </div>
         <div class="summary-row">
-            <span>Nifty spot</span>
-            <strong>${formatNumber(spot)}</strong>
+            <span>Decision time (IST)</span>
+            <strong>${escapeHtml(strategy.timestamp_ist || "--")}</strong>
         </div>
         <div class="summary-row">
-            <span>ATM strike</span>
-            <strong>${formatNumber(atm, 0)}</strong>
+            <span>Current exchange lot size</span>
+            <strong>${formatNumber(strategy.lot_size, 0)}</strong>
         </div>
         <div class="summary-row">
-            <span>Support / Resistance</span>
-            <strong>${formatNumber(support, 0)} / ${formatNumber(resistance, 0)}</strong>
+            <span>CE / PE / net points</span>
+            <strong>${formatNumber(strategy.ce_points, 1)} / ${formatNumber(strategy.pe_points, 1)} / ${formatNumber(strategy.net_score, 1)}</strong>
         </div>
         <div class="summary-row">
-            <span>Index alignment</span>
-            <strong>${bullishCount} bullish · ${bearishCount} bearish · ${availableCount} available</strong>
+            <span>3m trigger</span>
+            <strong>${escapeHtml(strategy.trigger_3m || "Unavailable")}</strong>
         </div>
         <div class="summary-row">
-            <span>ATM CE / PE positioning</span>
-            <strong>${ceSentiment.label} / ${peSentiment.label}</strong>
+            <span>Nifty 5m / 10m / 15m</span>
+            <strong>${escapeHtml(strategy.trends?.["Nifty 50"]?.["5m"] || "--")} / ${escapeHtml(strategy.trends?.["Nifty 50"]?.["10m"] || "--")} / ${escapeHtml(strategy.trends?.["Nifty 50"]?.["15m"] || "--")}</strong>
         </div>
-        <p><strong>Reasons:</strong> ${escapeHtml(reasons.join(" ") || "No strong directional confirmation.")}</p>
-        <p><strong>Warnings:</strong> ${escapeHtml(warnings.join(" ") || "No major index-alignment warning detected.")}</p>
+        <div class="summary-row">
+            <span>OI verdict / PCR / flow</span>
+            <strong>${escapeHtml(oi.verdict || "Unavailable")} / ${formatNumber(oi.pcr, 2)} / ${escapeHtml(oi.flow || "Unavailable")}</strong>
+        </div>
+        <div class="summary-row">
+            <span>Nearest major level</span>
+            <strong>${escapeHtml(level.name || "Unavailable")} ${formatNumber(level.price)}${levelDistance === null ? "" : ` (${levelDistance.toFixed(2)}%)`}</strong>
+        </div>
+        <p><strong>15m level confirmations:</strong> ${escapeHtml(levelEvents.join("; ") || "None")}</p>
+        <p><strong>Matched setups:</strong> ${escapeHtml(setups.map(item => `${item.name} → ${item.direction} +${item.points}`).join("; ") || "None")}</p>
+        <p><strong>Reason:</strong> ${escapeHtml(reasons.join(" ") || "No reason provided.")}</p>
+        ${positionAction ? `<p><strong>Position action:</strong> ${escapeHtml(positionAction)}</p>` : ""}
+        ${position.direction ? `
+            <div class="summary-row">
+                <span>Tracked reference (not broker-confirmed)</span>
+                <strong>${escapeHtml(position.direction)} · ${formatNumber(position.quantity, 0)} units</strong>
+            </div>
+            <div class="summary-row">
+                <span>Entry / current premium</span>
+                <strong>${formatNumber(position.entry_premium)} / ${formatNumber(position.current_premium)}</strong>
+            </div>
+            <div class="summary-row">
+                <span>Stop / target</span>
+                <strong>${formatNumber(position.stop_premium)} / ${formatNumber(position.target_premium)}</strong>
+            </div>
+        ` : ""}
         <p class="muted small-text">
-            Rule-based market bias only, not a guaranteed trade.
-            Confirm price action, liquidity, spread and risk before entering.
+            Signal-only strategy; no broker orders are placed. Tracked positions are reference simulations.
         </p>
     `;
 }

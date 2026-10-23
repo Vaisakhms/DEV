@@ -15,6 +15,7 @@ Secrets must be configured in GitHub Actions.
 """
 
 import base64
+import csv
 import datetime
 import email.utils
 import json
@@ -33,6 +34,8 @@ import requests
 import yfinance as yf
 
 from fyers_apiv3 import fyersModel
+
+from strategy_engine import evaluate_strategy
 
 
 # ============================================================
@@ -62,10 +65,15 @@ DASHBOARD_DATA = REPO_ROOT / "dashboard" / "data"
 LATEST_FILE = DASHBOARD_DATA / "latest.json"
 SNAPSHOT_DIR = DASHBOARD_DATA / "snapshots"
 HISTORY_INDEX_FILE = DASHBOARD_DATA / "history" / "index.json"
+STRATEGY_STATE_FILE = DASHBOARD_DATA / "strategy-state.json"
+STRATEGY_LOG_FILE = DASHBOARD_DATA / "strategy-log.jsonl"
 
 WEIGHTS_NOTE = "Rule-based indicators, not investment advice."
 
 TIMEFRAMES = [
+    ("3m", "3", 10),
+    ("5m", "5", 10),
+    ("10m", "10", 10),
     ("15m", "15", 25),
     ("30m", "30", 35),
     ("1h", "60", 60),
@@ -594,6 +602,22 @@ def analyze_series(df):
     }
 
 
+def completed_history(df, timeframe, now):
+    """Exclude candles that have not fully closed at the evaluation time."""
+    if df is None or df.empty:
+        return pd.DataFrame()
+
+    current_time = now.astimezone(IST)
+    if timeframe == "Daily":
+        return df[df.index.date < current_time.date()]
+
+    minutes = int(timeframe[:-1])
+    return df[
+        (df.index + datetime.timedelta(minutes=minutes))
+        <= current_time
+    ]
+
+
 def tf_line(label, analysis):
     if not analysis:
         return "  • *%s*: data unavailable" % label
@@ -745,6 +769,57 @@ def pcr_to_score(pcr):
     return -1.0
 
 
+def parse_expiry_date(value):
+    if not value:
+        return None
+
+    text = str(value).strip()
+    for pattern in ("%d-%m-%Y", "%Y-%m-%d", "%d-%b-%Y", "%d %b %Y"):
+        try:
+            return datetime.datetime.strptime(text, pattern).date()
+        except ValueError:
+            continue
+    return None
+
+
+def fetch_fyers_nifty_lot_size():
+    """Read the nearest NIFTY futures lot from Fyers' public instrument master."""
+    url = "https://public.fyers.in/sym_details/NSE_FO.csv"
+    now_epoch = int(datetime.datetime.now(IST).timestamp())
+    nearest = None
+    try:
+        with requests.get(url, stream=True, timeout=15) as response:
+            response.raise_for_status()
+            response.encoding = "utf-8"
+            for raw_line in response.iter_lines(decode_unicode=True):
+                if not raw_line:
+                    continue
+                row = next(csv.reader([raw_line]))
+                if len(row) < 14 or row[13].strip() != "NIFTY":
+                    continue
+                if not row[9].endswith("FUT"):
+                    continue
+                try:
+                    expiry_epoch = int(row[8])
+                    lot_size = int(row[3])
+                except (TypeError, ValueError):
+                    continue
+                if expiry_epoch >= now_epoch and (
+                    nearest is None or expiry_epoch < nearest[0]
+                ):
+                    nearest = (expiry_epoch, lot_size)
+                if nearest and expiry_epoch > nearest[0]:
+                    break
+    except requests.RequestException as exc:
+        print("Fyers instrument-master lot-size lookup failed:", exc)
+        return None
+
+    if nearest is None:
+        print("Fyers instrument master contained no current NIFTY futures lot.")
+        return None
+    return nearest[1]
+
+
 def fetch_fyers_options(spot_hint):
     fyers = get_fyers_client()
 
@@ -755,7 +830,7 @@ def fetch_fyers_options(spot_hint):
         response = fyers.optionchain(
             data={
                 "symbol": "NSE:NIFTY50-INDEX",
-                "strikecount": 12,
+                "strikecount": 50,
                 "timestamp": "",
             }
         )
@@ -769,6 +844,7 @@ def fetch_fyers_options(spot_hint):
         return None
 
     data = response.get("data", {})
+    captured_at = datetime.datetime.now(IST)
     chain = data.get("optionsChain", [])
 
     spot = None
@@ -778,7 +854,11 @@ def fetch_fyers_options(spot_hint):
             spot = item.get("ltp")
             break
 
-    spot = float(spot or spot_hint or 0)
+    try:
+        live_spot = float(spot) if spot not in (None, "") else None
+    except (TypeError, ValueError):
+        live_spot = None
+    spot = float(live_spot or spot_hint or 0)
 
     strikes = {}
 
@@ -842,12 +922,16 @@ def fetch_fyers_options(spot_hint):
     total_ce = float(data.get("callOi") or all_ce)
     total_pe = float(data.get("putOi") or all_pe)
 
-    pcr = total_pe / total_ce if total_ce > 0 else 0.0
+    pcr = (
+        total_pe / total_ce
+        if total_ce > 0 and total_pe > 0
+        else None
+    )
 
     zone_pcr = (
         zone_pe_oi / zone_ce_oi
-        if zone_ce_oi > 0
-        else 0.0
+        if zone_ce_oi > 0 and zone_pe_oi > 0
+        else None
     )
 
     resistance = max(
@@ -884,23 +968,76 @@ def fetch_fyers_options(spot_hint):
     )
 
     expiry = ""
+    expiry_date = None
+    lot_size = None
 
     expiry_data = data.get("expiryData")
 
     if isinstance(expiry_data, list) and expiry_data:
-        expiry = str(
-            expiry_data[0].get("date")
-            or expiry_data[0].get("expiry")
-            or ""
-        )
+        dated_expiries = []
+        for item in expiry_data:
+            value = item.get("date") or item.get("expiry")
+            parsed = parse_expiry_date(value)
+            if parsed and parsed >= datetime.datetime.now(IST).date():
+                dated_expiries.append((parsed, str(value)))
+        if dated_expiries:
+            expiry_date, expiry = min(dated_expiries)
+        else:
+            expiry = str(
+                expiry_data[0].get("date")
+                or expiry_data[0].get("expiry")
+                or ""
+            )
+            expiry_date = parse_expiry_date(expiry)
+
+    lot_value = (
+        data.get("lotSize") or data.get("lot_size")
+        or data.get("lotSizeNifty")
+    )
+    if not lot_value:
+        for item in chain:
+            lot_value = (
+                item.get("lot_size") or item.get("lotSize")
+            )
+            if lot_value:
+                break
+    try:
+        lot_size = int(lot_value) if lot_value else None
+    except (TypeError, ValueError):
+        lot_size = None
+    if lot_size is None:
+        lot_size = fetch_fyers_nifty_lot_size()
 
     straddle = number(ce, "ltp") + number(pe, "ltp")
 
+    chain_snapshot = {}
+
+    def measured_number(item, key):
+        value = item.get(key)
+        try:
+            return float(value) if value is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    for strike, legs in strikes.items():
+        chain_snapshot[str(strike)] = {
+            option_type: {
+                "oi": measured_number(item, "oi"),
+                "ltp": measured_number(item, "ltp"),
+            }
+            for option_type, item in legs.items()
+        }
+
     return {
         "source": "Fyers",
+        "captured_at": captured_at.isoformat(),
         "expiry": expiry,
+        "expiry_date": expiry_date.isoformat() if expiry_date else None,
         "spot": spot,
+        "spot_live": live_spot is not None and live_spot > 0,
         "atm": atm,
+        "lot_size": lot_size,
+        "chain": chain_snapshot,
         "ce": ce,
         "pe": pe,
         "ce_b": ce_buildup,
@@ -913,7 +1050,7 @@ def fetch_fyers_options(spot_hint):
         "zone_pe_chg": zone_pe_change,
         "resistance": resistance,
         "support": support,
-        "pcr_score": pcr_to_score(pcr),
+        "pcr_score": pcr_to_score(pcr) if pcr is not None else None,
         "oi_score": clamp(0.5 * flow_score + 0.5 * buildup_score),
     }
 
@@ -1019,6 +1156,8 @@ def options_for_dashboard(options):
         "expiry": options.get("expiry"),
         "spot": options.get("spot"),
         "atm": options.get("atm"),
+        "lot_size": options.get("lot_size"),
+        "expiry_date": options.get("expiry_date"),
         "straddle": options.get("straddle"),
         "move_pct": options.get("move_pct"),
         "pcr": options.get("pcr"),
@@ -1097,8 +1236,11 @@ def render_options(options):
         )
 
         lines.append(
-            "  • *PCR live*: %.2f total | %.2f near ATM"
-            % (options["pcr"], options["zone_pcr"])
+            "  • *PCR live*: %s total | %s near ATM"
+            % (
+                "%.2f" % options["pcr"] if options.get("pcr") is not None else "unavailable",
+                "%.2f" % options["zone_pcr"] if options.get("zone_pcr") is not None else "unavailable",
+            )
         )
 
     else:
@@ -1418,6 +1560,7 @@ def build_dashboard_payload(
     total,
     weight_sum,
     status,
+    strategy,
 ):
     index_data = {}
 
@@ -1442,6 +1585,7 @@ def build_dashboard_payload(
         "indices": index_data,
         "pivots": pivots,
         "options": options_for_dashboard(options),
+        "strategy": strategy,
         "global_markets": global_records,
         "news": {
             "score": news_score,
@@ -1541,12 +1685,115 @@ def save_dashboard_snapshot(payload):
     print("Snapshot written:", snapshot_path)
 
 
+def read_strategy_state():
+    if not STRATEGY_STATE_FILE.exists():
+        return {}
+    with STRATEGY_STATE_FILE.open("r", encoding="utf-8") as file:
+        state = json.load(file)
+    if not isinstance(state, dict):
+        raise ValueError("Strategy state must contain a JSON object.")
+    return state
+
+
+def persist_strategy_state(state, decision):
+    write_json(STRATEGY_STATE_FILE, state)
+    with STRATEGY_LOG_FILE.open("a", encoding="utf-8") as file:
+        file.write(json.dumps(
+            json_safe(decision),
+            ensure_ascii=False,
+            allow_nan=False,
+        ))
+        file.write("\n")
+
+
+def format_strategy_report(strategy):
+    oi = strategy.get("oi") or {}
+    position = strategy.get("position") or {}
+    major = strategy.get("nearest_major_level") or {}
+    setups = strategy.get("matched_setups") or []
+    level_events = [
+        "%s: %s at %s"
+        % (
+            name,
+            event["kind"],
+            event["level"].get("name", "level"),
+        )
+        for name, event in (strategy.get("level_events") or {}).items()
+        if event
+    ]
+    lines = [
+        "\n*7. NIFTY ATM STRATEGY (signal only; no orders placed)*",
+        "  • *Decision*: %s" % strategy["decision"],
+        "  • *Time*: %s" % strategy["timestamp_ist"],
+        "  • *Current exchange lot size*: %s"
+        % (strategy.get("lot_size") or "Unavailable"),
+        "  • *Score*: CE %.1f | PE %.1f | net %+.1f"
+        % (
+            strategy["ce_points"],
+            strategy["pe_points"],
+            strategy["net_score"],
+        ),
+        "  • *Trigger/trends*: 3m %s | 5m %s | 10m %s | 15m %s"
+        % (
+            strategy["trigger_3m"],
+            strategy["trends"]["Nifty 50"]["5m"],
+            strategy["trends"]["Nifty 50"]["10m"],
+            strategy["trends"]["Nifty 50"]["15m"],
+        ),
+        "  • *OI*: %s | PCR %s | flow %s"
+        % (
+            oi.get("verdict", "Unavailable"),
+            "%.2f" % oi["pcr"] if oi.get("pcr") is not None else "Unavailable",
+            oi.get("flow", "Unavailable"),
+        ),
+        "  • *Matched setups*: %s"
+        % (
+            "; ".join(
+                "%s %s +%s"
+                % (item["name"], item["direction"], item["points"])
+                for item in setups
+            ) or "None"
+        ),
+        "  • *15m level confirmations*: %s"
+        % ("; ".join(level_events) or "None"),
+        "  • *Nearest major level*: %s %s (%s)"
+        % (
+            major.get("name", "Unavailable"),
+            format(major["price"], ",.2f") if major.get("price") is not None else "",
+            (
+                "%.2f%% away" % strategy["level_distance_pct"]
+                if strategy.get("level_distance_pct") is not None
+                else "distance unavailable"
+            ),
+        ),
+        "  • *Reason*: %s" % "; ".join(strategy.get("reasons") or []),
+    ]
+    if strategy.get("position_action"):
+        lines.append("  • *Position action*: %s" % strategy["position_action"])
+    if position:
+        lines.append(
+            "  • *Tracked reference position (not broker-confirmed)*: %s x %s "
+            "units | entry ₹%.2f | current ₹%.2f | stop ₹%.2f | "
+            "target ₹%.2f | time exit 15:00 IST"
+            % (
+                position.get("direction"),
+                position.get("quantity"),
+                position.get("entry_premium", 0),
+                position.get("current_premium", 0),
+                position.get("stop_premium", 0),
+                position.get("target_premium", 0),
+            )
+        )
+    return lines
+
+
 # ============================================================
 # MAIN
 # ============================================================
 
 def main():
     now = datetime.datetime.now(IST)
+    prior_strategy_state = read_strategy_state()
 
     status = market_status(now)
 
@@ -1559,14 +1806,15 @@ def main():
         chart_data[name] = {}
 
         for label, resolution, days in TIMEFRAMES:
-            df = fetch_history(symbol, resolution, days)
+            fetched = fetch_history(symbol, resolution, days)
+            df = completed_history(fetched, label, now)
 
             analysis[name][label] = analyze_series(df)
 
             # Keep enough candles for charting without making JSON huge.
             chart_data[name][label] = serialize_candles(
                 df,
-                limit=500,
+                limit=1200 if label in ("3m", "5m", "10m") else 500,
             )
 
             if label == "Daily":
@@ -1590,14 +1838,53 @@ def main():
         else None
     )
 
-    options = (
-        fetch_fyers_options(spot_hint)
-        or fetch_nse_fallback()
-    )
+    strategy_indices = {}
+    for name in INDICES:
+        completed_daily = daily_data.get(name)
+        previous_sessions = (
+            completed_daily.tail(7)
+            if completed_daily is not None and not completed_daily.empty
+            else pd.DataFrame()
+        )
+        previous_day = (
+            completed_daily.iloc[-1]
+            if completed_daily is not None and not completed_daily.empty
+            else None
+        )
+        strategy_indices[name] = {
+            "frames": {
+                label: {
+                    "analysis": analysis[name].get(label),
+                    "candles": chart_data[name].get(label, []),
+                }
+                for label, _, _ in TIMEFRAMES
+            },
+            "pivots": pivots_from_daily(completed_daily) or {},
+            "completed_sessions_count": len(previous_sessions),
+            "previous_day_high": (
+                float(previous_day["High"]) if previous_day is not None else None
+            ),
+            "previous_day_low": (
+                float(previous_day["Low"]) if previous_day is not None else None
+            ),
+            "seven_day_high": (
+                float(previous_sessions["High"].max())
+                if not previous_sessions.empty else None
+            ),
+            "seven_day_low": (
+                float(previous_sessions["Low"].min())
+                if not previous_sessions.empty else None
+            ),
+        }
 
     global_lines, global_score, global_records = global_analysis()
 
     news_items, news_score = fetch_news()
+
+    options = (
+        fetch_fyers_options(spot_hint)
+        or fetch_nse_fallback()
+    )
 
     def score_of(item):
         return item["score"] if item else None
@@ -1663,6 +1950,32 @@ def main():
         if weight_sum
         else 0.0
     )
+
+    try:
+        account_size = float(os.getenv("STRATEGY_ACCOUNT_SIZE", ""))
+        if account_size <= 0:
+            account_size = None
+    except ValueError:
+        account_size = None
+    strategy_now = datetime.datetime.now(IST)
+    strategy, next_strategy_state = evaluate_strategy(
+        now=strategy_now,
+        indices=strategy_indices,
+        pivots=pivots,
+        options=options,
+        previous=prior_strategy_state.get("option_snapshot"),
+        state=prior_strategy_state,
+        market_bias=total,
+        account_size=account_size,
+        lot_size=(options or {}).get("lot_size"),
+    )
+    if options and options.get("source") == "Fyers" and options.get("chain"):
+        next_strategy_state["option_snapshot"] = {
+            "timestamp": options.get("captured_at"),
+            "expiry": options.get("expiry"),
+            "chain": options["chain"],
+        }
+    persist_strategy_state(next_strategy_state, strategy)
 
     # --------------------------------------------------------
     # BUILD TELEGRAM REPORT
@@ -1809,6 +2122,7 @@ def main():
     lines.extend(render_news(news_items))
 
     lines.append("\n_%s_" % WEIGHTS_NOTE)
+    lines.extend(format_strategy_report(strategy))
 
     # --------------------------------------------------------
     # EXPORT DASHBOARD DATA
@@ -1829,6 +2143,7 @@ def main():
         total=total,
         weight_sum=weight_sum,
         status=status,
+        strategy=strategy,
     )
 
     save_dashboard_snapshot(payload)

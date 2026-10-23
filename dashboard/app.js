@@ -1305,7 +1305,7 @@ async function renderHistory() {
     }
 }
 
-// ---------- Main dashboard rendering ----------
+// ---------- DEV dashboard rendering ----------
 
 function renderDashboard(data) {
     if (!data || typeof data !== "object" || !data.indices) {

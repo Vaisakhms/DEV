@@ -3,6 +3,13 @@ name: Run Market Analysis and ATM Strategy Dashboard
 on:
   workflow_dispatch:
 
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/run-script.yml
+      - TG_Alert/test/strategy_engine.py
+
   schedule:
     # GitHub Actions scheduled workflows have a 5-minute minimum interval.
     - cron: "20-55/5 9 * * 1-5"

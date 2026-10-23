@@ -17,13 +17,21 @@ def _number(value):
     return result if result == result and abs(result) != float("inf") else None
 
 
+def _sma_values(frame):
+    sma = frame.get("sma") or {}
+    return {
+        period: _number(sma.get(period, sma.get(str(period))))
+        for period in (20, 50, 100)
+    }
+
+
 def _trend(frame):
     if not frame:
         return "Unavailable"
     close = _number(frame.get("close"))
-    sma = frame.get("sma") or {}
-    sma20 = _number(sma.get("20"))
-    sma50 = _number(sma.get("50"))
+    sma = _sma_values(frame)
+    sma20 = sma[20]
+    sma50 = sma[50]
     if close is None or sma20 is None or sma50 is None:
         return "Unavailable"
     if close > sma20 > sma50:
@@ -105,7 +113,7 @@ def _consolidating(frames, bank=False):
     if len(candles) < 8:
         return False
     close = _number(analysis.get("close"))
-    sma20 = _number((analysis.get("sma") or {}).get("20"))
+    sma20 = _sma_values(analysis)[20]
     if close is None or sma20 is None or close == 0:
         return False
     window = candles[-8:]
@@ -301,9 +309,9 @@ def _make_levels(index_name, data, pivots, options):
     for timeframe in ("30m", "1h", "Daily"):
         frame = (data.get("frames") or {}).get(timeframe) or {}
         frame = frame.get("analysis") or frame
-        sma = frame.get("sma") or {}
+        sma = _sma_values(frame)
         for period in ("50", "100"):
-            price = _number(sma.get(period))
+            price = sma[int(period)]
             if price is not None:
                 frame15 = (data.get("frames", {}).get("15m") or {})
                 frame15 = frame15.get("analysis") or frame15
@@ -317,7 +325,7 @@ def _make_levels(index_name, data, pivots, options):
                     })
     frame15 = (data.get("frames") or {}).get("15m") or {}
     frame15 = frame15.get("analysis") or frame15
-    minor = _number((frame15.get("sma") or {}).get("20"))
+    minor = _sma_values(frame15)[20]
     if minor is not None:
         close = _number(frame15.get("close"))
         if close is not None:
@@ -397,12 +405,11 @@ def evaluate_strategy(now, indices, pivots, options, previous, state,
             required_data_available = False
         for timeframe in ("3m", "5m", "10m", "15m", "30m", "1h", "Daily"):
             frame = (frames[name].get(timeframe) or {}).get("analysis") or {}
-            sma = frame.get("sma") or {}
+            sma = _sma_values(frame)
             if (
                 _number(frame.get("close")) is None
                 or _number(frame.get("rsi")) is None
-                or any(_number(sma.get(period)) is None
-                       for period in ("20", "50", "100"))
+                or any(sma[period] is None for period in (20, 50, 100))
             ):
                 required_data_available = False
                 continue

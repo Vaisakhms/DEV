@@ -14,15 +14,15 @@ from strategy_engine import (
 class StrategyRuleTests(unittest.TestCase):
     def test_trend_requires_close_sma20_sma50_order(self):
         self.assertEqual(
-            _trend({"close": 110, "sma": {"20": 105, "50": 100}}),
+            _trend({"close": 110, "sma": {20: 105, 50: 100}}),
             "Bullish",
         )
         self.assertEqual(
-            _trend({"close": 90, "sma": {"20": 95, "50": 100}}),
+            _trend({"close": 90, "sma": {20: 95, 50: 100}}),
             "Bearish",
         )
         self.assertEqual(
-            _trend({"close": 100, "sma": {"20": 105, "50": 95}}),
+            _trend({"close": 100, "sma": {20: 105, 50: 95}}),
             "Mixed",
         )
 
@@ -136,7 +136,7 @@ class StrategyRuleTests(unittest.TestCase):
             ):
                 analysis = {
                     "close": 100,
-                    "sma": {"20": 99, "50": 98, "100": 97},
+                    "sma": {20: 99, 50: 98, 100: 97},
                     "rsi": 55,
                 }
                 if timeframe == "3m":

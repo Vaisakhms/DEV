@@ -470,6 +470,12 @@ function renderOptions(data) {
     const options = data.options || {};
     const pcr = number(options.pcr);
     const zonePcr = number(options.zone_pcr);
+    const capturedAt = options.captured_at
+        ? formatDashboardDateTime(options.captured_at)
+        : "unavailable";
+    const closedNotice = /closed/i.test(data.market_status || "")
+        ? "; values may reflect the last session"
+        : "";
 
     setText("pcrValue", formatNumber(pcr, 2));
 
@@ -491,7 +497,7 @@ function renderOptions(data) {
 
     setText(
         "optionsSource",
-        `Source: ${options.source || "Unavailable"} | Expiry: ${options.expiry || "--"}`
+        `Source: ${options.source || "Unavailable"} | Expiry: ${options.expiry || "--"} | Snapshot received: ${capturedAt} IST${closedNotice}`
     );
 
     const container = $("optionsCards");
@@ -778,15 +784,37 @@ function renderPriceActionDecision(data) {
         );
     const levelDistance = number(strategy.level_distance_pct);
     const positionAction = strategy.position_action || "";
+    const marketClosed = /closed/i.test(data.market_status || "");
+    const requiredInputsAvailable =
+        strategy.entry_filters?.required_data === true;
+    const nifty15mCandles =
+        data.indices?.["Nifty 50"]?.charts?.["15m"] || [];
+    const lastNifty15mCandle = nifty15mCandles.reduce((latest, candle) => {
+        const time = number(candle.time);
+        return time !== null && (latest === null || time > latest)
+            ? time
+            : latest;
+    }, null);
+    const lastNifty15mClose = lastNifty15mCandle === null
+        ? null
+        : formatDashboardDateTime(
+            new Date((lastNifty15mCandle + 15 * 60) * 1000).toISOString()
+        );
+    const freshnessMessage = marketClosed
+        ? `Market closed — showing the latest available session data. Last completed Nifty 15m candle: ${lastNifty15mClose || "unavailable"} IST. No live entry signal is available after hours.`
+        : !requiredInputsAvailable
+            ? "One or more required market inputs are missing or stale. The strategy will remain WAIT until all data gates pass."
+            : "Market open — entries still require fresh completed candles, option-chain confirmation, and every strategy gate to pass.";
 
     decision.innerHTML = `
         <h3>Nifty ATM Strategy Decision</h3>
+        <p class="market-data-note" role="status">${escapeHtml(freshnessMessage)}</p>
         <div class="${signalClass}" style="font-size:1.35rem;font-weight:700;margin:12px 0">
             ${escapeHtml(signal)}
         </div>
         <div class="summary-row">
             <span>Decision time (IST)</span>
-            <strong>${escapeHtml(strategy.timestamp_ist || "--")}</strong>
+            <strong>${escapeHtml(formatDashboardDateTime(strategy.timestamp_ist || ""))}</strong>
         </div>
         <div class="summary-row">
             <span>Current exchange lot size</span>

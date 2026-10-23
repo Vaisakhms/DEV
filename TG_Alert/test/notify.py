@@ -1153,6 +1153,7 @@ def options_for_dashboard(options):
 
     result = {
         "source": options.get("source"),
+        "captured_at": options.get("captured_at"),
         "expiry": options.get("expiry"),
         "spot": options.get("spot"),
         "atm": options.get("atm"),

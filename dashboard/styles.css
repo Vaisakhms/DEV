@@ -2153,6 +2153,15 @@ a:hover {
   margin-top: 0;
 }
 
+#niftyTradeDecision .market-data-note {
+  padding: 10px 12px;
+  border: 1px solid rgba(247, 200, 106, 0.25);
+  border-radius: 8px;
+  background: rgba(247, 200, 106, 0.08);
+  color: var(--muted-light);
+  font-size: 12px;
+}
+
 #niftyTradeDecision .buy-call {
   color: #22c55e;
 }

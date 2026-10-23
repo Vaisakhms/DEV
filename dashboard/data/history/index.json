@@ -1,5 +1,13 @@
 [
   {
+    "file": "20261023-204220.json",
+    "generated_at": "2026-10-23T20:42:20.037584+05:30",
+    "generated_at_ist": "2026-10-23 20:42:20",
+    "score": -40.054201252157306,
+    "label": "STRONG BEARISH 🔴🔴",
+    "nifty_close": 22600.0
+  },
+  {
     "file": "20261023-195101.json",
     "generated_at": "2026-10-23T19:51:01.333547+05:30",
     "generated_at_ist": "2026-10-23 19:51:01",
@@ -86,13 +94,5 @@
     "score": -22.823291949301638,
     "label": "BEARISH 🔴",
     "nifty_close": 22746.75
-  },
-  {
-    "file": "20261023-085514.json",
-    "generated_at": "2026-10-23T08:55:14.766707+05:30",
-    "generated_at_ist": "2026-10-23 08:55:14",
-    "score": -38.08601029836316,
-    "label": "BEARISH 🔴",
-    "nifty_close": 22687.65
   }
 ]

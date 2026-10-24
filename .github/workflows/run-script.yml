@@ -1,10 +1,16 @@
-name: Run Market Analysis and Publish Dashboard
+name: Run Market Analysis and ATM Strategy Dashboard
 
 on:
   workflow_dispatch:
 
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - dashboard/data/**
+
   schedule:
-    # Morning global market perspective: 8:30 AM IST, Monday-Friday - test
+    # Morning global market perspective: 8:30 AM IST, Monday-Friday
     - cron: "30 8 * * 1-5"
       timezone: "Asia/Kolkata"
 
@@ -32,7 +38,7 @@ concurrency:
 jobs:
   run-and-notify:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
 
     steps:
       - name: Checkout repository
@@ -60,6 +66,7 @@ jobs:
           FYERS_ID: ${{ secrets.FYERS_ID }}
           FYERS_PIN: ${{ secrets.FYERS_PIN }}
           FYERS_TOTP_SECRET: ${{ secrets.FYERS_TOTP_SECRET }}
+          STRATEGY_ACCOUNT_SIZE: ${{ secrets.STRATEGY_ACCOUNT_SIZE }}
 
         run: python TG_Alert/test/notify.py
 
@@ -71,6 +78,8 @@ jobs:
           git add dashboard/data/latest.json
           git add dashboard/data/history/index.json
           git add dashboard/data/snapshots/
+          git add dashboard/data/strategy-state.json
+          git add dashboard/data/strategy-log.jsonl
 
           if git diff --cached --quiet; then
             echo "No dashboard data changes to commit."

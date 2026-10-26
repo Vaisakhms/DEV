@@ -429,6 +429,14 @@ def get_fyers_client():
 # MARKET DATA
 # ============================================================
 
+def deduplicate_candle_rows(candles):
+    """Keep the last API candle for each timestamp."""
+    unique = {}
+    for candle in candles:
+        unique[candle[0]] = candle
+    return list(unique.values())
+
+
 def fetch_history(symbol, resolution, days):
     fyers = get_fyers_client()
 
@@ -455,9 +463,10 @@ def fetch_history(symbol, resolution, days):
         print("History error %s [%s]: %s" % (symbol, resolution, exc))
         return pd.DataFrame()
 
-    if response.get("s") == "ok" and response.get("candles"):
+    candles = deduplicate_candle_rows(response.get("candles") or [])
+    if response.get("s") == "ok" and candles:
         df = pd.DataFrame(
-            response["candles"],
+            candles,
             columns=[
                 "Epoch",
                 "Open",

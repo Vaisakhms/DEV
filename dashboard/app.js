@@ -762,6 +762,19 @@ function renderPriceActionDecision(data) {
     `;
 
     const strategy = data.strategy || {};
+    const marketClosed = /closed/i.test(data.market_status || "");
+    const scalpOpportunity = strategy.scalp_opportunity || {};
+    const scalpDecision = marketClosed
+        ? "WAIT"
+        : scalpOpportunity.decision || "WAIT";
+    const scalpReason = marketClosed
+        ? "Market closed; stored scalp data is not a live signal."
+        : scalpOpportunity.reason || "Scalp signal unavailable.";
+    const scalpClass = scalpDecision === "BUY ATM CE"
+        ? "buy-call"
+        : scalpDecision === "BUY ATM PE"
+            ? "buy-put"
+            : "wait";
     const oi = strategy.oi || {};
     const latestPcr = number(oi.pcr) ?? number(data.options?.pcr);
     const pcrDisplay = latestPcr === null
@@ -788,7 +801,6 @@ function renderPriceActionDecision(data) {
         );
     const levelDistance = number(strategy.level_distance_pct);
     const positionAction = strategy.position_action || "";
-    const marketClosed = /closed/i.test(data.market_status || "");
     const requiredInputsAvailable =
         strategy.entry_filters?.required_data === true;
     const nifty15mCandles =
@@ -807,7 +819,7 @@ function renderPriceActionDecision(data) {
     const freshnessMessage = marketClosed
         ? `Market closed — showing the latest available session data. Last completed Nifty 15m candle: ${lastNifty15mClose || "unavailable"} IST. No live entry signal is available after hours.`
         : !requiredInputsAvailable
-            ? "One or more required market inputs are missing or stale. The strategy will remain WAIT until all data gates pass."
+            ? "Main strategy requires all market-data gates. The separate scalp signal uses fresh Nifty candles and live ATM quotes."
             : "Market open — entries still require fresh completed candles, option-chain confirmation, and every strategy gate to pass.";
 
     decision.innerHTML = `
@@ -816,6 +828,11 @@ function renderPriceActionDecision(data) {
         <div class="${signalClass}" style="font-size:1.35rem;font-weight:700;margin:12px 0">
             ${escapeHtml(signal)}
         </div>
+        <div class="summary-row">
+            <span>Scalp opportunity (signal only)</span>
+            <strong class="${scalpClass}">${escapeHtml(scalpDecision)}</strong>
+        </div>
+        <p class="muted small-text">${escapeHtml(scalpReason)}</p>
         <div class="summary-row">
             <span>Decision time (IST)</span>
             <strong>${escapeHtml(formatDashboardDateTime(strategy.timestamp_ist || ""))}</strong>

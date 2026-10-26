@@ -67,6 +67,90 @@ def _trigger(frames):
     return "None"
 
 
+def _fresh_completed_candle(candles, now, interval_seconds, max_age_seconds):
+    if not candles:
+        return False
+    candle_start = _number(candles[-1].get("time"))
+    if candle_start is None:
+        return False
+    age = now.timestamp() - (candle_start + interval_seconds)
+    return 0 <= age <= max_age_seconds
+
+
+def _scalp_opportunity(now, nifty, options, lot_size):
+    local_now = now.astimezone(IST)
+    wait = {"decision": "WAIT", "reason": "Scalp setup filters did not pass."}
+
+    if (
+        not _evaluation_window(now)
+        or not datetime.time(9, 20) <= local_now.time() <= datetime.time(14, 45)
+    ):
+        return {**wait, "reason": "Outside the scalp entry window."}
+    if not nifty or not options or options.get("source") != "Fyers":
+        return {**wait, "reason": "Live Nifty and Fyers option data are required."}
+    if not options.get("spot_live") or not lot_size or lot_size <= 0:
+        return {**wait, "reason": "Live spot or current exchange lot size is unavailable."}
+
+    expiry_date = options.get("expiry_date")
+    if not expiry_date:
+        return {**wait, "reason": "Option expiry is unavailable."}
+    if expiry_date == local_now.date().isoformat():
+        return {**wait, "reason": "Expiry-day scalp entries are disabled."}
+
+    try:
+        captured_at = datetime.datetime.fromisoformat(options["captured_at"])
+        if captured_at.tzinfo is None:
+            return {**wait, "reason": "Option-chain timestamp has no timezone."}
+        quote_age = (now - captured_at).total_seconds()
+    except (KeyError, TypeError, ValueError):
+        return {**wait, "reason": "Option-chain timestamp is unavailable or invalid."}
+    if not 0 <= quote_age <= 180:
+        return {**wait, "reason": "Live option-chain data is stale."}
+
+    frames = nifty.get("frames") or {}
+    candles_3m = (frames.get("3m") or {}).get("candles") or []
+    candles_5m = (frames.get("5m") or {}).get("candles") or []
+    if (
+        not _fresh_completed_candle(candles_3m, now, 180, 360)
+        or not _fresh_completed_candle(candles_5m, now, 300, 480)
+    ):
+        return {**wait, "reason": "Fresh completed 3m and 5m candles are required."}
+
+    trigger = _trigger(frames)
+    if trigger not in ("Bullish", "Bearish"):
+        return {**wait, "reason": "No confirmed 3m breakout trigger."}
+    direction = "CE" if trigger == "Bullish" else "PE"
+    expected_trend = "Bullish" if direction == "CE" else "Bearish"
+    trend_5m = _trend((frames.get("5m") or {}).get("analysis"))
+    trend_15m = _trend((frames.get("15m") or {}).get("analysis"))
+    if trend_5m != expected_trend:
+        return {**wait, "reason": "The 3m breakout is not aligned with the Nifty 5m trend."}
+    if trend_15m not in (expected_trend, "Mixed"):
+        return {**wait, "reason": "The Nifty 15m trend is unavailable or opposes the breakout."}
+
+    spot = _number(options.get("spot"))
+    atm = _number(options.get("atm"))
+    nifty_close = _number(
+        ((frames.get("15m") or {}).get("analysis") or {}).get("close")
+    )
+    premium = _number((options.get("ce" if direction == "CE" else "pe") or {}).get("ltp"))
+    if (
+        spot is None or atm is None or nifty_close is None or premium is None
+        or premium <= 0 or abs(atm - spot) > 25 or abs(atm - nifty_close) > 25
+    ):
+        return {**wait, "reason": "Fresh ATM strike, spot, or option premium is unavailable."}
+
+    return {
+        "decision": "BUY ATM " + direction,
+        "direction": direction,
+        "reason": "Completed 3m breakout aligned with Nifty 5m trend; 15m trend is not opposing.",
+        "trigger_3m": trigger,
+        "trend_5m": trend_5m,
+        "trend_15m": trend_15m,
+        "premium": premium,
+    }
+
+
 def _near(price, level, percent):
     return price is not None and level is not None and level != 0 and (
         abs(price - level) / abs(level) * 100 <= percent
@@ -431,6 +515,12 @@ def evaluate_strategy(now, indices, pivots, options, previous, state,
         for name in INDEX_NAMES
     }
     trigger = _trigger(frames.get("Nifty 50") or {})
+    scalp_opportunity = _scalp_opportunity(
+        now,
+        indices.get("Nifty 50") or {},
+        options,
+        lot_size,
+    )
     consolidating = {
         name: _consolidating(frames[name], name == "Bank Nifty")
         for name in INDEX_NAMES
@@ -863,6 +953,7 @@ def evaluate_strategy(now, indices, pivots, options, previous, state,
         distance = abs(nifty_spot - nearest["price"]) / nearest["price"] * 100
     detail = {
         "decision": decision,
+        "scalp_opportunity": scalp_opportunity,
         "timestamp_ist": now.astimezone(IST).isoformat(),
         "ce_points": round(points["CE"], 2),
         "pe_points": round(points["PE"], 2),

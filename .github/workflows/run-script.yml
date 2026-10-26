@@ -14,16 +14,17 @@ on:
     - cron: "30 8 * * 1-5"
       timezone: "Asia/Kolkata"
 
-    # Market session: 9:20 AM to 9:55 AM IST, every 5 minutes
-    - cron: "20-55/5 9 * * 1-5"
+    # GitHub scheduled workflows support a minimum 5-minute interval.
+    # Market session: 9:15 AM to 9:55 AM IST, every 5 minutes
+    - cron: "15-55/5 9 * * 1-5"
       timezone: "Asia/Kolkata"
 
     # Market session: 10:00 AM to 2:55 PM IST, every 5 minutes
     - cron: "*/5 10-14 * * 1-5"
       timezone: "Asia/Kolkata"
 
-    # Market session: 3:00 PM to 3:15 PM IST, every 5 minutes
-    - cron: "0-15/5 15 * * 1-5"
+    # Final update at 3:00 PM IST
+    - cron: "0 15 * * 1-5"
       timezone: "Asia/Kolkata"
 
 permissions:
@@ -51,12 +52,49 @@ jobs:
         with:
           python-version: "3.10"
 
+      - name: Check NSE F&O trading calendar
+        id: nse-calendar
+        run: |
+          python - <<'PY'
+          import datetime
+          import json
+          import os
+          import urllib.request
+          from zoneinfo import ZoneInfo
+
+          url = "https://www.nseindia.com/api/holiday-master?type=trading"
+          request = urllib.request.Request(
+              url,
+              headers={
+                  "User-Agent": "Mozilla/5.0",
+                  "Accept": "application/json",
+              },
+          )
+          with urllib.request.urlopen(request, timeout=20) as response:
+              calendar = json.load(response)
+          holidays = calendar.get("FO")
+          if not isinstance(holidays, list):
+              raise ValueError("NSE F&O holiday calendar is missing.")
+
+          today = datetime.datetime.now(
+              ZoneInfo("Asia/Kolkata")
+          ).strftime("%d-%b-%Y")
+          is_trading_day = not any(
+              item.get("tradingDate") == today for item in holidays
+          )
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write("is_trading_day=%s\n" % str(is_trading_day).lower())
+          print("NSE F&O trading day: %s" % is_trading_day)
+          PY
+
       - name: Install dependencies
+        if: steps.nse-calendar.outputs.is_trading_day == 'true'
         run: |
           python -m pip install --upgrade pip
           pip install requests yfinance pandas pyotp fyers-apiv3
 
       - name: Run market analysis
+        if: steps.nse-calendar.outputs.is_trading_day == 'true'
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -71,6 +109,7 @@ jobs:
         run: python TG_Alert/test/notify.py
 
       - name: Commit dashboard data
+        if: steps.nse-calendar.outputs.is_trading_day == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -89,10 +128,12 @@ jobs:
           fi
 
       - name: Upload dashboard for GitHub Pages
+        if: steps.nse-calendar.outputs.is_trading_day == 'true'
         uses: actions/upload-pages-artifact@v3
         with:
           path: dashboard
 
       - name: Deploy dashboard to GitHub Pages
+        if: steps.nse-calendar.outputs.is_trading_day == 'true'
         id: deployment
         uses: actions/deploy-pages@v4

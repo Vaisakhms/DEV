@@ -618,6 +618,41 @@ def completed_history(df, timeframe, now):
     ]
 
 
+def daily_history_with_latest_session(daily_df, intraday_df):
+    """Append the latest intraday session as a current daily candle."""
+    if daily_df is None or daily_df.empty:
+        daily_df = pd.DataFrame(
+            columns=["Open", "High", "Low", "Close", "Volume"],
+            index=pd.DatetimeIndex([], tz=IST),
+        )
+
+    if intraday_df is None or intraday_df.empty:
+        return daily_df
+
+    latest_intraday_date = intraday_df.index[-1].date()
+    if (
+        not daily_df.empty
+        and latest_intraday_date <= daily_df.index[-1].date()
+    ):
+        return daily_df
+
+    session = intraday_df[intraday_df.index.date == latest_intraday_date]
+    if session.empty:
+        return daily_df
+
+    current_session = pd.DataFrame(
+        [{
+            "Open": float(session["Open"].iloc[0]),
+            "High": float(session["High"].max()),
+            "Low": float(session["Low"].min()),
+            "Close": float(session["Close"].iloc[-1]),
+            "Volume": float(session["Volume"].sum()),
+        }],
+        index=[session.index[0].normalize()],
+    )
+    return pd.concat([daily_df, current_session]).sort_index()
+
+
 def tf_line(label, analysis):
     if not analysis:
         return "  • *%s*: data unavailable" % label
@@ -1808,6 +1843,7 @@ def main():
     analysis = {}
     daily_data = {}
     chart_data = {}
+    intraday_data = {}
 
     for name, symbol in INDICES.items():
         analysis[name] = {}
@@ -1817,16 +1853,27 @@ def main():
             fetched = fetch_history(symbol, resolution, days)
             df = completed_history(fetched, label, now)
 
-            analysis[name][label] = analyze_series(df)
+            analysis_df = df
+            chart_df = df
 
-            # Keep enough candles for charting without making JSON huge.
-            chart_data[name][label] = serialize_candles(
-                df,
-                limit=1200 if label in ("3m", "5m", "10m") else 500,
-            )
+            if label == "3m":
+                intraday_data[name] = df
 
             if label == "Daily":
                 daily_data[name] = df
+                analysis_df = daily_history_with_latest_session(
+                    df,
+                    intraday_data.get(name),
+                )
+                chart_df = analysis_df
+
+            # Keep enough candles for charting without making JSON huge.
+            chart_data[name][label] = serialize_candles(
+                chart_df,
+                limit=1200 if label in ("3m", "5m", "10m") else 500,
+            )
+
+            analysis[name][label] = analyze_series(analysis_df)
 
             time.sleep(0.15)
 

@@ -12,14 +12,9 @@ on:
   schedule:
     # GitHub Actions schedule cron expressions use UTC.
     # Morning global market perspective: 8:30 AM IST, Monday-Friday.
-    - cron: "0 3 * * 1-5"
-
-    # Market session: 9:15 AM to 9:55 AM IST, every 5 minutes.
-    - cron: "45-59/5 3 * * 1-5"
-    - cron: "*/5 4-8 * * 1-5"
-
-    # Final update at 3:00 PM IST.
-    - cron: "0-30/5 9 * * 1-5"
+    # The calendar step below gates runs to the 8:30 AM global update and
+    # the 9:15 AM-3:00 PM IST market session.
+    - cron: "*/5 3-9 * * 1-5"
 
 permissions:
   contents: write

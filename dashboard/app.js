@@ -875,6 +875,44 @@ function chartTime(candle) {
     return t === null ? null : t;
 }
 
+function formatChartTime(time, options) {
+    const timestamp = number(time);
+    if (timestamp === null) return "";
+
+    return new Intl.DateTimeFormat("en-IN", {
+        timeZone: "Asia/Kolkata",
+        ...options
+    }).format(new Date(timestamp * 1000));
+}
+
+function formatChartTick(time, tickMarkType) {
+    const types = window.LightweightCharts?.TickMarkType || {};
+
+    if (tickMarkType === types.Year) {
+        return formatChartTime(time, { year: "numeric" });
+    }
+    if (tickMarkType === types.Month) {
+        return formatChartTime(time, { month: "short", year: "numeric" });
+    }
+    if (tickMarkType === types.DayOfMonth) {
+        return formatChartTime(time, { day: "numeric", month: "short" });
+    }
+    if (tickMarkType === types.TimeWithSeconds) {
+        return formatChartTime(time, {
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+            hourCycle: "h23"
+        });
+    }
+
+    return formatChartTime(time, {
+        hour: "2-digit",
+        minute: "2-digit",
+        hourCycle: "h23"
+    });
+}
+
 function validCandles(candles) {
     if (!Array.isArray(candles)) return [];
 
@@ -919,6 +957,17 @@ function addChart(container, options = {}) {
             fontFamily: "DM Sans, sans-serif"
         },
 
+        localization: {
+            timeFormatter: time => `${formatChartTime(time, {
+                day: "numeric",
+                month: "short",
+                year: "2-digit",
+                hour: "2-digit",
+                minute: "2-digit",
+                hourCycle: "h23"
+            })} IST`
+        },
+
         grid: {
             vertLines: { color: "rgba(148,163,184,0.10)" },
             horzLines: { color: "rgba(148,163,184,0.10)" }
@@ -931,7 +980,8 @@ function addChart(container, options = {}) {
         timeScale: {
             borderColor: "rgba(148,163,184,0.20)",
             timeVisible: options.timeVisible !== false,
-            secondsVisible: false
+            secondsVisible: false,
+            tickMarkFormatter: formatChartTick
         },
 
         crosshair: { mode: 0 },

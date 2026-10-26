@@ -25,7 +25,7 @@
         rel="stylesheet"
     >
 
-    <link rel="stylesheet" href="./styles.css?v=strategy-rules-4">
+    <link rel="stylesheet" href="./styles.css?v=live-data-6">
 
     <!-- Lightweight Charts for interactive candlestick charts -->
     <script
@@ -33,7 +33,7 @@
         src="https://unpkg.com/lightweight-charts@4.2.2/dist/lightweight-charts.standalone.production.js"
     ></script>
 
-    <script defer src="./app.js?v=strategy-rules-4"></script>
+    <script defer src="./app.js?v=live-data-6"></script>
 </head>
 
 <body>
@@ -305,25 +305,47 @@
 
             </section>
             
-            <!-- Price Action Decision Panel -->
-<section class="section" id="priceActionDecision">
-<div class="section-heading">
-    <div>
-        <div class="eyebrow">MARKET SIGNALS</div>
-        <h2>ATM Options Strategy — Signal Only</h2>
-    </div>
-</div>
-<div id="criteriaSummary">
-    <p>Loading market criteria...</p>
-</div>
-<div id="niftyTradeDecision">
-    <h3>Nifty ATM Trade Decision</h3>
-    <p>Waiting for strategy data...</p>
-</div>
-</section>
+            <section class="section" id="combinedDecision">
+                <div class="section-heading">
+                    <div>
+                        <div class="eyebrow">CONSOLIDATED ANALYSIS</div>
+                        <h2>Combined Market Decision</h2>
+                    </div>
+                </div>
+
+                <article class="panel combined-decision-panel" id="combinedDecisionCard">
+                    <p class="muted">Loading combined market analysis...</p>
+                </article>
+
+                <button
+                    id="toggleDetailCards"
+                    class="text-button detail-toggle"
+                    type="button"
+                    aria-expanded="false"
+                    aria-controls="detailCards"
+                >Show detailed cards</button>
+            </section>
+
+            <div id="detailCards" hidden>
+                <!-- Price Action Decision Panel -->
+                <section class="section" id="priceActionDecision">
+                    <div class="section-heading">
+                        <div>
+                            <div class="eyebrow">MARKET SIGNALS</div>
+                            <h2>ATM Options Strategy — Signal Only</h2>
+                        </div>
+                    </div>
+                    <div id="criteriaSummary">
+                        <p>Loading market criteria...</p>
+                    </div>
+                    <div id="niftyTradeDecision">
+                        <h3>Nifty ATM Trade Decision</h3>
+                        <p>Waiting for strategy data...</p>
+                    </div>
+                </section>
 
 
-            <!-- Technical indicators -->
+                <!-- Technical indicators -->
             <section class="section">
 
                 <div class="section-heading">
@@ -344,7 +366,7 @@
             </section>
 
 
-            <!-- Options -->
+                <!-- Options -->
             <section class="section">
 
                 <div class="section-heading">
@@ -437,7 +459,7 @@
             </section>
 
 
-            <!-- Global markets -->
+                <!-- Global markets -->
             <section class="section">
 
                 <div class="section-heading">
@@ -458,7 +480,7 @@
             </section>
 
 
-            <!-- Seven-day performance -->
+                <!-- Seven-day performance -->
             <section class="section">
 
                 <div class="section-heading">
@@ -479,7 +501,7 @@
             </section>
 
 
-            <!-- Score breakdown -->
+                <!-- Score breakdown -->
             <section class="section">
 
                 <div class="section-heading">
@@ -509,7 +531,7 @@
             </section>
 
 
-            <!-- News -->
+                <!-- News -->
             <section class="section">
 
                 <div class="section-heading">
@@ -529,7 +551,8 @@
 
                 </div>
 
-            </section>
+                </section>
+            </div>
 
 
             <!-- History -->

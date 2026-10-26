@@ -10,22 +10,21 @@ on:
       - dashboard/data/**
 
   schedule:
-    # Morning global market perspective: 8:30 AM IST, Monday-Friday
-    - cron: "30 8 * * 1-5"
-      timezone: "Asia/Kolkata"
+    # GitHub Actions schedule cron expressions use UTC.
+    # Morning global market perspective: 8:30 AM IST, Monday-Friday.
+    - cron: "0 3 * * 1-5"
 
-    # GitHub scheduled workflows support a minimum 5-minute interval.
-    # Market session: 9:15 AM to 9:55 AM IST, every 5 minutes
-    - cron: "15-55/5 9 * * 1-5"
-      timezone: "Asia/Kolkata"
+    # Market session: 9:15 AM to 9:55 AM IST, every 5 minutes.
+    - cron: "45-59/5 3 * * 1-5"
+    - cron: "0-25/5 4 * * 1-5"
 
-    # Market session: 10:00 AM to 2:55 PM IST, every 5 minutes
-    - cron: "*/5 10-14 * * 1-5"
-      timezone: "Asia/Kolkata"
+    # Market session: 10:00 AM to 2:55 PM IST, every 5 minutes.
+    - cron: "30-55/5 4 * * 1-5"
+    - cron: "*/5 5-8 * * 1-5"
+    - cron: "0-25/5 9 * * 1-5"
 
-    # Final update at 3:00 PM IST
-    - cron: "0 15 * * 1-5"
-      timezone: "Asia/Kolkata"
+    # Final update at 3:00 PM IST.
+    - cron: "30 9 * * 1-5"
 
 permissions:
   contents: write

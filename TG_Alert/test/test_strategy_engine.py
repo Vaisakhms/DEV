@@ -228,6 +228,118 @@ class StrategyRuleTests(unittest.TestCase):
         self.assertIn("required_data", decision["entry_filters"])
         self.assertFalse(decision["entry_filters"]["required_data"])
 
+    def test_scalp_signal_can_appear_while_main_strategy_waits(self):
+        now = datetime.datetime(2026, 10, 23, 10, 0, tzinfo=datetime.timezone(
+            datetime.timedelta(hours=5, minutes=30)
+        ))
+        frames = {
+            "3m": {
+                "candles": [
+                    {"time": now.timestamp() - 360, "high": 101, "low": 98,
+                     "close": 100, "sma20": 99},
+                    {"time": now.timestamp() - 180, "high": 103, "low": 99,
+                     "close": 102, "sma20": 99},
+                ]
+            },
+            "5m": {
+                "analysis": {"close": 102, "sma": {20: 101, 50: 100}},
+                "candles": [{"time": now.timestamp() - 300}],
+            },
+            "15m": {
+                "analysis": {"close": 102, "sma": {20: 101, 50: 100}},
+                "candles": [{"time": now.timestamp() - 900}],
+            },
+        }
+        options = {
+            "source": "Fyers",
+            "spot_live": True,
+            "captured_at": now.isoformat(),
+            "expiry_date": "2026-10-27",
+            "spot": 102,
+            "atm": 100,
+            "ce": {"ltp": 10},
+        }
+        decision, _ = evaluate_strategy(
+            now=now,
+            indices={"Nifty 50": {"frames": frames}},
+            pivots=None,
+            options=options,
+            previous=None,
+            state={},
+            market_bias=0,
+            account_size=None,
+            lot_size=65,
+        )
+
+        self.assertEqual(decision["decision"], "WAIT")
+        self.assertEqual(
+            decision["scalp_opportunity"]["decision"], "BUY ATM CE"
+        )
+
+    def test_scalp_signal_rejects_opposing_trend_and_expiry_day(self):
+        now = datetime.datetime(2026, 10, 23, 10, 0, tzinfo=datetime.timezone(
+            datetime.timedelta(hours=5, minutes=30)
+        ))
+        frames = {
+            "3m": {
+                "candles": [
+                    {"time": now.timestamp() - 360, "high": 101, "low": 98,
+                     "close": 100, "sma20": 99},
+                    {"time": now.timestamp() - 180, "high": 103, "low": 99,
+                     "close": 102, "sma20": 99},
+                ]
+            },
+            "5m": {
+                "analysis": {"close": 98, "sma": {20: 99, 50: 100}},
+                "candles": [{"time": now.timestamp() - 300}],
+            },
+            "15m": {
+                "analysis": {"close": 102, "sma": {20: 101, 50: 100}},
+                "candles": [{"time": now.timestamp() - 900}],
+            },
+        }
+        options = {
+            "source": "Fyers",
+            "spot_live": True,
+            "captured_at": now.isoformat(),
+            "expiry_date": "2026-10-27",
+            "spot": 102,
+            "atm": 100,
+            "ce": {"ltp": 10},
+        }
+        decision, _ = evaluate_strategy(
+            now=now,
+            indices={"Nifty 50": {"frames": frames}},
+            pivots=None,
+            options=options,
+            previous=None,
+            state={},
+            market_bias=0,
+            account_size=None,
+            lot_size=65,
+        )
+
+        self.assertEqual(decision["scalp_opportunity"]["decision"], "WAIT")
+        self.assertIn("not aligned", decision["scalp_opportunity"]["reason"])
+
+        frames["5m"]["analysis"] = {
+            "close": 102, "sma": {20: 101, 50: 100}
+        }
+        options["expiry_date"] = "2026-10-23"
+        decision, _ = evaluate_strategy(
+            now=now,
+            indices={"Nifty 50": {"frames": frames}},
+            pivots=None,
+            options=options,
+            previous=None,
+            state={},
+            market_bias=0,
+            account_size=None,
+            lot_size=65,
+        )
+        self.assertEqual(decision["scalp_opportunity"]["decision"], "WAIT")
+        self.assertIn("Expiry-day", decision["scalp_opportunity"]["reason"])
+
     def test_valid_aligned_setup_can_emit_atm_call_signal(self):
         now = datetime.datetime(2026, 10, 23, 10, 0, tzinfo=datetime.timezone(
             datetime.timedelta(hours=5, minutes=30)

@@ -1,0 +1,137 @@
+name: Market Pulse Scheduled Analysis
+
+on:
+  workflow_dispatch:
+
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - dashboard/data/**
+
+  schedule:
+    # GitHub Actions schedule cron expressions use UTC.
+    # Stagger away from busy 5-minute boundaries; the calendar step gates
+    # collection to the 8:30 AM global update and 9:15 AM-3:00 PM IST session.
+    - cron: "2-57/5 3-9 * * 1-5"
+    - cron: "30 9 * * 1-5"
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: market-dashboard
+  cancel-in-progress: false
+
+jobs:
+  run-and-notify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Check NSE F&O trading calendar
+        id: nse-calendar
+        run: |
+          python - <<'PY'
+          import datetime
+          import json
+          import os
+          import urllib.request
+          from zoneinfo import ZoneInfo
+
+          now = datetime.datetime.now(ZoneInfo("Asia/Kolkata"))
+          minutes_after_midnight = now.hour * 60 + now.minute
+          is_market_update_time = 9 * 60 + 15 <= minutes_after_midnight <= 15 * 60
+          is_global_update_time = 8 * 60 + 30 <= minutes_after_midnight < 8 * 60 + 35
+          is_manual_run = os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch"
+          if not (is_market_update_time or is_global_update_time or is_manual_run):
+              with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+                  output.write("is_trading_day=false\n")
+              print("Outside scheduled IST update windows; skipping collection.")
+              raise SystemExit(0)
+
+          url = "https://www.nseindia.com/api/holiday-master?type=trading"
+          request = urllib.request.Request(
+              url,
+              headers={
+                  "User-Agent": "Mozilla/5.0",
+                  "Accept": "application/json",
+              },
+          )
+          with urllib.request.urlopen(request, timeout=20) as response:
+              calendar = json.load(response)
+          holidays = calendar.get("FO")
+          if not isinstance(holidays, list):
+              raise ValueError("NSE F&O holiday calendar is missing.")
+
+          today = now.strftime("%d-%b-%Y")
+          is_trading_day = not any(
+              item.get("tradingDate") == today for item in holidays
+          )
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write("is_trading_day=%s\n" % str(is_trading_day).lower())
+          print("NSE F&O trading day: %s" % is_trading_day)
+          PY
+
+      - name: Install dependencies
+        if: steps.nse-calendar.outputs.is_trading_day == 'true'
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests yfinance pandas pyotp fyers-apiv3
+
+      - name: Run market analysis
+        if: steps.nse-calendar.outputs.is_trading_day == 'true'
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+
+          FYERS_CLIENT_ID: ${{ secrets.FYERS_CLIENT_ID }}
+          FYERS_SECRET_KEY: ${{ secrets.FYERS_SECRET_KEY }}
+          FYERS_ID: ${{ secrets.FYERS_ID }}
+          FYERS_PIN: ${{ secrets.FYERS_PIN }}
+          FYERS_TOTP_SECRET: ${{ secrets.FYERS_TOTP_SECRET }}
+          STRATEGY_ACCOUNT_SIZE: ${{ secrets.STRATEGY_ACCOUNT_SIZE }}
+
+        run: python TG_Alert/test/notify.py
+
+      - name: Commit dashboard data
+        if: steps.nse-calendar.outputs.is_trading_day == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add dashboard/data/latest.json
+          git add dashboard/data/history/index.json
+          git add dashboard/data/snapshots/
+          git add dashboard/data/strategy-state.json
+          git add dashboard/data/strategy-log.jsonl
+
+          if git diff --cached --quiet; then
+            echo "No dashboard data changes to commit."
+          else
+            git commit -m "Update market dashboard data"
+            git push
+          fi
+
+      - name: Upload dashboard for GitHub Pages
+        if: steps.nse-calendar.outputs.is_trading_day == 'true'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dashboard
+
+      - name: Deploy dashboard to GitHub Pages
+        if: steps.nse-calendar.outputs.is_trading_day == 'true'
+        id: deployment
+        uses: actions/deploy-pages@v4

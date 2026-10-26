@@ -1725,6 +1725,13 @@ def format_strategy_report(strategy):
     lines = [
         "\n*7. NIFTY ATM STRATEGY (signal only; no orders placed)*",
         "  • *Decision*: %s" % strategy["decision"],
+        "  • *Scalp opportunity*: %s — %s"
+        % (
+            (strategy.get("scalp_opportunity") or {}).get("decision", "WAIT"),
+            (strategy.get("scalp_opportunity") or {}).get(
+                "reason", "Scalp filters not evaluated."
+            ),
+        ),
         "  • *Time*: %s" % strategy["timestamp_ist"],
         "  • *Current exchange lot size*: %s"
         % (strategy.get("lot_size") or "Unavailable"),

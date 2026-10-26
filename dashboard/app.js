@@ -675,6 +675,219 @@ function renderNews(data) {
     }).join("");
 }
 
+function combinedMarketBias(data) {
+    const components = Array.isArray(data.scores?.components)
+        ? data.scores.components
+        : [];
+    const totalWeight = components.reduce(
+        (total, item) => total + Math.max(0, number(item.weight, 0)),
+        0
+    );
+    const weightedContribution = components.reduce((total, item) => {
+        const contribution = number(item.contribution);
+        const score = number(item.score, 0);
+        const weight = number(item.weight, 0);
+        return total + (contribution ?? score * weight);
+    }, 0);
+    const score = totalWeight > 0
+        ? weightedContribution / totalWeight * 100
+        : number(data.overall?.score);
+
+    return {
+        score,
+        direction: score === null
+            ? "Unavailable"
+            : score >= 15
+                ? "Bullish"
+                : score <= -15
+                    ? "Bearish"
+                    : "Neutral / mixed",
+        components
+    };
+}
+
+function renderCombinedDecision(data) {
+    const container = $("combinedDecisionCard");
+    if (!container) return;
+
+    const strategy = data.strategy || {};
+    const options = data.options || {};
+    const news = data.news || {};
+    const indices = data.indices || {};
+    const snapshotDate = data.generated_at || data.generated_at_ist || "";
+    const snapshotTimestamp = Date.parse(snapshotDate);
+    const snapshotAge = Number.isFinite(snapshotTimestamp)
+        ? Date.now() - snapshotTimestamp
+        : null;
+    const staleSnapshot = snapshotAge === null
+        || snapshotAge < 0
+        || snapshotAge > 10 * 60 * 1000;
+    const marketClosed = /closed/i.test(data.market_status || "")
+        || staleSnapshot;
+    const snapshotAgeLabel = snapshotAge === null
+        ? "age unavailable"
+        : snapshotAge < 0
+            ? "timestamp is in the future"
+            : snapshotAge < 60 * 1000
+                ? "just now"
+                : snapshotAge < 60 * 60 * 1000
+                    ? `${Math.floor(snapshotAge / (60 * 1000))} min ago`
+                    : `${Math.floor(snapshotAge / (60 * 60 * 1000))} hr ${Math.floor(snapshotAge % (60 * 60 * 1000) / (60 * 1000))} min ago`;
+    const snapshotTimeLabel = Number.isFinite(snapshotTimestamp)
+        ? `${formatDashboardDateTime(snapshotDate)} IST · ${snapshotAgeLabel}`
+        : "Timestamp unavailable";
+    const bias = combinedMarketBias(data);
+    const mainDecision = ["BUY ATM CE", "BUY ATM PE"].includes(strategy.decision)
+        ? strategy.decision
+        : "WAIT";
+    const scalp = strategy.scalp_opportunity || {};
+    const scalpDecision = marketClosed
+        ? "WAIT"
+        : ["BUY ATM CE", "BUY ATM PE"].includes(scalp.decision)
+            ? scalp.decision
+            : scalp.decision === "WAIT"
+                ? "WAIT"
+                : "Unavailable";
+    const candidate = mainDecision !== "WAIT"
+        ? mainDecision
+        : scalpDecision.startsWith("BUY ATM")
+            ? scalpDecision
+            : "WAIT";
+    const candidateDirection = candidate.endsWith("CE")
+        ? "Bullish"
+        : candidate.endsWith("PE")
+            ? "Bearish"
+            : null;
+    const conflictsWithBias = Boolean(
+        candidateDirection
+        && (bias.direction === "Bullish" || bias.direction === "Bearish")
+        && candidateDirection !== bias.direction
+    );
+    const combinedDecision = marketClosed || conflictsWithBias
+        ? "WAIT"
+        : candidate;
+    const isScalpOnly = mainDecision === "WAIT"
+        && scalpDecision.startsWith("BUY ATM")
+        && combinedDecision !== "WAIT";
+    const decisionClass = combinedDecision === "BUY ATM CE"
+        || combinedDecision === "BUY ATM PE"
+        ? combinedDecision.endsWith("CE") ? "buy-call" : "buy-put"
+        : "wait";
+    const decisionText = combinedDecision === "WAIT"
+        ? "WAIT"
+        : `${isScalpOnly ? "SCALP ONLY · " : ""}${combinedDecision}`;
+    const decisionReason = marketClosed
+        ? /closed/i.test(data.market_status || "")
+            ? "Market is closed; stored signals are not live trade calls."
+            : `Market data is ${snapshotAgeLabel}; live signals are disabled when data is over 10 minutes old.`
+        : conflictsWithBias
+            ? `${candidate} conflicts with the weighted overall market bias. Wait for alignment or reassessment.`
+            : candidate === "WAIT"
+                ? "Neither the main strategy nor the scalp setup has a valid entry signal."
+                : bias.direction === "Neutral / mixed"
+                    ? "Signal passed; broad market inputs are mixed, so treat it cautiously."
+                    : `Signal passed and agrees with the weighted ${bias.direction.toLowerCase()} market bias.`;
+
+    const nifty = indices["Nifty 50"] || {};
+    const niftyFrames = nifty.timeframes || {};
+    const trend5m = strategy.trends?.["Nifty 50"]?.["5m"]
+        || niftyFrames["5m"]?.label
+        || "Unavailable";
+    const trend15m = strategy.trends?.["Nifty 50"]?.["15m"]
+        || niftyFrames["15m"]?.label
+        || "Unavailable";
+    const breadth = Object.entries(indices).map(([name, item]) => {
+        const label = item.timeframes?.["15m"]?.label || "Unavailable";
+        return { name, label, direction: sentimentClass(label) };
+    });
+    const bullishBreadth = breadth.filter(item => item.direction === "positive").length;
+    const bearishBreadth = breadth.filter(item => item.direction === "negative").length;
+
+    const oi = strategy.oi || {};
+    const oiScore = number(options.oi_score);
+    const oiSentiment = oi.verdict
+        || (oiScore === null
+            ? "Unavailable"
+            : oiScore >= 0.15
+                ? "Bullish"
+                : oiScore <= -0.15
+                    ? "Bearish"
+                    : "Neutral");
+    const pcr = number(oi.pcr) ?? number(options.pcr);
+    const weekly = number(nifty.seven_day?.net);
+    const globalScore = number(data.scores?.global_markets);
+    const newsScore = number(news.score);
+    const supportingComponents = bias.components
+        .filter(item => number(item.score, 0) * (bias.score || 0) > 0)
+        .sort((left, right) =>
+            Math.abs(number(right.contribution, 0))
+            - Math.abs(number(left.contribution, 0))
+        )
+        .slice(0, 2)
+        .map(item => item.name)
+        .filter(Boolean);
+    const coverage = number(data.overall?.coverage_pct);
+    const aggregateScore = bias.score === null
+        ? "Unavailable"
+        : `${bias.score > 0 ? "+" : ""}${bias.score.toFixed(1)} / 100`;
+
+    container.innerHTML = `
+        <div class="combined-decision-header">
+            <div>
+                <span class="eyebrow">CURRENT COMBINED DECISION</span>
+                <div class="${decisionClass} combined-decision-value">
+                    ${escapeHtml(decisionText)}
+                </div>
+                <p class="muted combined-decision-reason">${escapeHtml(decisionReason)}</p>
+                <p class="combined-data-age${staleSnapshot ? " stale" : ""}">Last data: ${escapeHtml(snapshotTimeLabel)}</p>
+            </div>
+            <div class="combined-bias ${sentimentClass(bias.direction)}">
+                <span class="eyebrow">WEIGHTED MARKET BIAS</span>
+                <strong>${escapeHtml(bias.direction)}</strong>
+                <span>${escapeHtml(aggregateScore)}</span>
+            </div>
+        </div>
+        <div class="combined-metrics">
+            <div class="combined-metric">
+                <span class="eyebrow">MAIN STRATEGY</span>
+                <strong>${escapeHtml(marketClosed ? "WAIT" : mainDecision)}</strong>
+                <small>${escapeHtml(strategy.reasons?.[0] || "See detailed strategy filters.")}</small>
+            </div>
+            <div class="combined-metric">
+                <span class="eyebrow">SCALP OPPORTUNITY</span>
+                <strong class="${scalpDecision.endsWith("CE") ? "positive" : scalpDecision.endsWith("PE") ? "negative" : "neutral"}">${escapeHtml(scalpDecision)}</strong>
+                <small>${escapeHtml(/closed/i.test(data.market_status || "") ? "Market closed." : staleSnapshot ? "Latest snapshot is stale; no live signal." : scalp.reason || "Scalp data unavailable.")}</small>
+            </div>
+            <div class="combined-metric">
+                <span class="eyebrow">NIFTY TREND / BREADTH</span>
+                <strong>${escapeHtml(trend5m)} · ${escapeHtml(trend15m)}</strong>
+                <small>${bullishBreadth} bullish / ${bearishBreadth} bearish 15m indices</small>
+            </div>
+            <div class="combined-metric">
+                <span class="eyebrow">OPTIONS / OI</span>
+                <strong>${escapeHtml(oiSentiment)} · PCR ${pcr === null ? "--" : pcr.toFixed(2)}</strong>
+                <small>ATM ${formatNumber(options.atm, 0)} · expiry ${escapeHtml(options.expiry || "--")}</small>
+            </div>
+            <div class="combined-metric">
+                <span class="eyebrow">SEVEN-SESSION TREND</span>
+                <strong>${formatPercent(weekly)}</strong>
+                <small>Nifty 50 recent momentum</small>
+            </div>
+            <div class="combined-metric">
+                <span class="eyebrow">GLOBAL / NEWS</span>
+                <strong>${globalScore === null ? "--" : formatSigned(globalScore, 2)} global · ${newsScore === null ? "--" : formatSigned(newsScore, 2)} news</strong>
+                <small>${Array.isArray(news.items) ? news.items.length : 0} news items in sentiment input</small>
+            </div>
+        </div>
+        <div class="combined-footer muted small-text">
+            Composite bias uses the weighted backend score components${coverage === null ? "" : ` · ${coverage.toFixed(0)}% input coverage`}${supportingComponents.length ? ` · largest ${bias.direction === "Bearish" ? "bearish" : "bullish"} inputs: ${escapeHtml(supportingComponents.join(", "))}` : ""}.
+            ${conflictsWithBias ? " The signal is held at WAIT because the trade direction conflicts with strong aggregate bias." : ""}
+            ${staleSnapshot && !/closed/i.test(data.market_status || "") ? ` Snapshot is stale (${escapeHtml(snapshotAgeLabel)}).` : ""}
+            Signals are informational only; no broker orders are placed.
+        </div>
+    `;
+}
+
 // ---------- Price Action decision ----------
 
 function renderPriceActionDecision(data) {
@@ -762,6 +975,19 @@ function renderPriceActionDecision(data) {
     `;
 
     const strategy = data.strategy || {};
+    const marketClosed = /closed/i.test(data.market_status || "");
+    const scalpOpportunity = strategy.scalp_opportunity || {};
+    const scalpDecision = marketClosed
+        ? "WAIT"
+        : scalpOpportunity.decision || "WAIT";
+    const scalpReason = marketClosed
+        ? "Market closed; stored scalp data is not a live signal."
+        : scalpOpportunity.reason || "Scalp signal unavailable.";
+    const scalpClass = scalpDecision === "BUY ATM CE"
+        ? "buy-call"
+        : scalpDecision === "BUY ATM PE"
+            ? "buy-put"
+            : "wait";
     const oi = strategy.oi || {};
     const latestPcr = number(oi.pcr) ?? number(data.options?.pcr);
     const pcrDisplay = latestPcr === null
@@ -788,7 +1014,6 @@ function renderPriceActionDecision(data) {
         );
     const levelDistance = number(strategy.level_distance_pct);
     const positionAction = strategy.position_action || "";
-    const marketClosed = /closed/i.test(data.market_status || "");
     const requiredInputsAvailable =
         strategy.entry_filters?.required_data === true;
     const nifty15mCandles =
@@ -807,7 +1032,7 @@ function renderPriceActionDecision(data) {
     const freshnessMessage = marketClosed
         ? `Market closed — showing the latest available session data. Last completed Nifty 15m candle: ${lastNifty15mClose || "unavailable"} IST. No live entry signal is available after hours.`
         : !requiredInputsAvailable
-            ? "One or more required market inputs are missing or stale. The strategy will remain WAIT until all data gates pass."
+            ? "Main strategy requires all market-data gates. The separate scalp signal uses fresh Nifty candles and live ATM quotes."
             : "Market open — entries still require fresh completed candles, option-chain confirmation, and every strategy gate to pass.";
 
     decision.innerHTML = `
@@ -816,6 +1041,11 @@ function renderPriceActionDecision(data) {
         <div class="${signalClass}" style="font-size:1.35rem;font-weight:700;margin:12px 0">
             ${escapeHtml(signal)}
         </div>
+        <div class="summary-row">
+            <span>Scalp opportunity (signal only)</span>
+            <strong class="${scalpClass}">${escapeHtml(scalpDecision)}</strong>
+        </div>
+        <p class="muted small-text">${escapeHtml(scalpReason)}</p>
         <div class="summary-row">
             <span>Decision time (IST)</span>
             <strong>${escapeHtml(formatDashboardDateTime(strategy.timestamp_ist || ""))}</strong>
@@ -875,6 +1105,44 @@ function chartTime(candle) {
     return t === null ? null : t;
 }
 
+function formatChartTime(time, options) {
+    const timestamp = number(time);
+    if (timestamp === null) return "";
+
+    return new Intl.DateTimeFormat("en-IN", {
+        timeZone: "Asia/Kolkata",
+        ...options
+    }).format(new Date(timestamp * 1000));
+}
+
+function formatChartTick(time, tickMarkType) {
+    const types = window.LightweightCharts?.TickMarkType || {};
+
+    if (tickMarkType === types.Year) {
+        return formatChartTime(time, { year: "numeric" });
+    }
+    if (tickMarkType === types.Month) {
+        return formatChartTime(time, { month: "short", year: "numeric" });
+    }
+    if (tickMarkType === types.DayOfMonth) {
+        return formatChartTime(time, { day: "numeric", month: "short" });
+    }
+    if (tickMarkType === types.TimeWithSeconds) {
+        return formatChartTime(time, {
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+            hourCycle: "h23"
+        });
+    }
+
+    return formatChartTime(time, {
+        hour: "2-digit",
+        minute: "2-digit",
+        hourCycle: "h23"
+    });
+}
+
 function validCandles(candles) {
     if (!Array.isArray(candles)) return [];
 
@@ -919,6 +1187,17 @@ function addChart(container, options = {}) {
             fontFamily: "DM Sans, sans-serif"
         },
 
+        localization: {
+            timeFormatter: time => `${formatChartTime(time, {
+                day: "numeric",
+                month: "short",
+                year: "2-digit",
+                hour: "2-digit",
+                minute: "2-digit",
+                hourCycle: "h23"
+            })} IST`
+        },
+
         grid: {
             vertLines: { color: "rgba(148,163,184,0.10)" },
             horzLines: { color: "rgba(148,163,184,0.10)" }
@@ -931,7 +1210,8 @@ function addChart(container, options = {}) {
         timeScale: {
             borderColor: "rgba(148,163,184,0.20)",
             timeVisible: options.timeVisible !== false,
-            secondsVisible: false
+            secondsVisible: false,
+            tickMarkFormatter: formatChartTick
         },
 
         crosshair: { mode: 0 },
@@ -1285,7 +1565,7 @@ async function renderHistory() {
     }
 }
 
-// ---------- Main dashboard rendering ----------
+// ---------- DEV dashboard rendering ----------
 
 function renderDashboard(data) {
     if (!data || typeof data !== "object" || !data.indices) {
@@ -1302,6 +1582,7 @@ function renderDashboard(data) {
     renderWeeklyCards(data);
     renderOptions(data);
     renderPriceActionDecision(data);
+    renderCombinedDecision(data);
     renderGlobalMarkets(data);
     renderBreakdown(data);
     renderNews(data);
@@ -1365,6 +1646,19 @@ async function loadDashboard(showMessage = false) {
 // ---------- Controls ----------
 
 function setupControls() {
+    const detailCards = $("detailCards");
+    const detailToggle = $("toggleDetailCards");
+    if (detailCards && detailToggle) {
+        detailToggle.addEventListener("click", () => {
+            const expanded = detailToggle.getAttribute("aria-expanded") === "true";
+            detailCards.hidden = expanded;
+            detailToggle.setAttribute("aria-expanded", String(!expanded));
+            detailToggle.textContent = expanded
+                ? "Show detailed cards"
+                : "Hide detailed cards";
+        });
+    }
+
     const indexSelect = $("indexSelect");
 
     if (indexSelect) {

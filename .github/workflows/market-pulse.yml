@@ -1,4 +1,4 @@
-name: Run Market Analysis and ATM Strategy Dashboard
+name: Market Pulse Scheduled Analysis
 
 on:
   workflow_dispatch:

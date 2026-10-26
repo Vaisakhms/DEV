@@ -55,7 +55,8 @@ jobs:
           minutes_after_midnight = now.hour * 60 + now.minute
           is_market_update_time = 9 * 60 + 15 <= minutes_after_midnight <= 15 * 60
           is_global_update_time = 8 * 60 + 30 <= minutes_after_midnight < 8 * 60 + 35
-          if not (is_market_update_time or is_global_update_time):
+          is_manual_run = os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch"
+          if not (is_market_update_time or is_global_update_time or is_manual_run):
               with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
                   output.write("is_trading_day=false\n")
               print("Outside scheduled IST update windows; skipping collection.")

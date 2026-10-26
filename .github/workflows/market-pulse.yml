@@ -16,15 +16,10 @@ on:
 
     # Market session: 9:15 AM to 9:55 AM IST, every 5 minutes.
     - cron: "45-59/5 3 * * 1-5"
-    - cron: "0-25/5 4 * * 1-5"
-
-    # Market session: 10:00 AM to 2:55 PM IST, every 5 minutes.
-    - cron: "30-55/5 4 * * 1-5"
-    - cron: "*/5 5-8 * * 1-5"
-    - cron: "0-25/5 9 * * 1-5"
+    - cron: "*/5 4-8 * * 1-5"
 
     # Final update at 3:00 PM IST.
-    - cron: "30 9 * * 1-5"
+    - cron: "0-30/5 9 * * 1-5"
 
 permissions:
   contents: write
@@ -61,6 +56,16 @@ jobs:
           import urllib.request
           from zoneinfo import ZoneInfo
 
+          now = datetime.datetime.now(ZoneInfo("Asia/Kolkata"))
+          minutes_after_midnight = now.hour * 60 + now.minute
+          is_market_update_time = 9 * 60 + 15 <= minutes_after_midnight <= 15 * 60
+          is_global_update_time = 8 * 60 + 30 <= minutes_after_midnight < 8 * 60 + 35
+          if not (is_market_update_time or is_global_update_time):
+              with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+                  output.write("is_trading_day=false\n")
+              print("Outside scheduled IST update windows; skipping collection.")
+              raise SystemExit(0)
+
           url = "https://www.nseindia.com/api/holiday-master?type=trading"
           request = urllib.request.Request(
               url,
@@ -75,9 +80,7 @@ jobs:
           if not isinstance(holidays, list):
               raise ValueError("NSE F&O holiday calendar is missing.")
 
-          today = datetime.datetime.now(
-              ZoneInfo("Asia/Kolkata")
-          ).strftime("%d-%b-%Y")
+          today = now.strftime("%d-%b-%Y")
           is_trading_day = not any(
               item.get("tradingDate") == today for item in holidays
           )

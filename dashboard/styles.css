@@ -776,10 +776,6 @@ a:hover {
     border-radius: 11px;
 }
 
-.timeframe-buttons [data-timeframe="CrossIndex"] {
-    min-width: 82px;
-}
-
 .cross-index-summary {
     flex: 1 1 100%;
     min-width: 0;
@@ -1932,10 +1928,6 @@ a:hover {
 
         padding: 5px 6px;
         font-size: 10px;
-    }
-
-    .timeframe-buttons [data-timeframe="CrossIndex"] {
-        min-width: 76px;
     }
 
     .chart-panel {

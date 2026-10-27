@@ -340,17 +340,6 @@ function renderIndexCards(data) {
     container.querySelectorAll("[data-index]").forEach(button => {
         button.addEventListener("click", () => {
             state.selectedIndex = button.dataset.index;
-
-            if (state.selectedTimeframe === "CrossIndex") {
-                state.selectedTimeframe = "Daily";
-                document.querySelectorAll("[data-timeframe]").forEach(item => {
-                    item.classList.toggle(
-                        "active",
-                        item.dataset.timeframe === "Daily"
-                    );
-                });
-            }
-
             const select = $("indexSelect");
             if (select) select.value = state.selectedIndex;
 
@@ -1304,8 +1293,6 @@ function marketDate(timestamp) {
 }
 
 function renderCrossIndexChart(data) {
-    const indexSelect = $("indexSelect");
-    const indexSelectLabel = $("indexSelectLabel");
     const singleSummary = $("singleIndexSummary");
     const chartLegend = $("chartLegend");
     const crossSummary = $("crossIndexSummary");
@@ -1315,8 +1302,6 @@ function renderCrossIndexChart(data) {
     const rsiChart = $("rsiChart");
     const priceContainer = $("priceChart");
 
-    if (indexSelect) indexSelect.hidden = true;
-    if (indexSelectLabel) indexSelectLabel.hidden = true;
     if (singleSummary) singleSummary.hidden = true;
     if (chartLegend) chartLegend.hidden = true;
     if (crossSummary) crossSummary.hidden = false;
@@ -1324,9 +1309,14 @@ function renderCrossIndexChart(data) {
     if (volumeChart) volumeChart.hidden = true;
     if (rsiHeading) rsiHeading.hidden = true;
     if (rsiChart) rsiChart.hidden = true;
-    setText("chartInstrument", "CrossIndex · 3m relative performance");
+    const timeframe = state.selectedTimeframe;
+    const timeframeLabel = timeframe === "Daily" ? "1D" : timeframe;
+    setText(
+        "chartInstrument",
+        `CrossIndex · ${timeframeLabel} relative performance`
+    );
     setText("chartPrice", "5 indices");
-    setText("chartChange", "% from first 3m close");
+    setText("chartChange", "% from first candle close");
 
     clearCharts();
 
@@ -1347,10 +1337,16 @@ function renderCrossIndexChart(data) {
 
     for (const name of CROSS_INDEX_ORDER) {
         const item = data.indices?.[name] || {};
-        const candles = validCandles(item.charts?.["3m"] || []).filter(candle =>
-            !sessionDate || marketDate(candle.time) === sessionDate
+        const allCandles = validCandles(item.charts?.[timeframe] || []);
+        const candles = timeframe === "Daily"
+            ? allCandles
+            : allCandles.filter(candle =>
+                !sessionDate || marketDate(candle.time) === sessionDate
+            );
+        const spot = number(
+            item.ltp,
+            number(item.timeframes?.[timeframe]?.ltp)
         );
-        const spot = number(item.ltp, number(item.timeframes?.["3m"]?.ltp));
         const baseline = number(candles[0]?.close);
         const points = baseline !== null && baseline > 0
             ? candles.map(candle => ({
@@ -1360,6 +1356,7 @@ function renderCrossIndexChart(data) {
             : [];
         if (
             points.length
+            && timeframe !== "Daily"
             && isRecentOpenSnapshot
             && spot !== null
             && currentTime > points[points.length - 1].time
@@ -1409,7 +1406,7 @@ function renderCrossIndexChart(data) {
     if (crossSummary) {
         crossSummary.innerHTML = `
             <p class="cross-index-note">
-                Lines show each index's change from its first available 3m close, so crossovers are comparable despite different point scales. Spot prices stay in index points below. Nearest support/resistance uses published pivots, previous-day and 7-session levels, plus 15m/30m/1H/Daily moving averages; “near” means within ${CROSS_INDEX_LEVEL_THRESHOLD_PCT.toFixed(2)}%.
+                Lines show each index's change from its first ${escapeHtml(timeframeLabel)} candle close, so crossovers are comparable despite different point scales. Spot prices stay in index points below. Nearest support/resistance uses published pivots, previous-day and 7-session levels, plus 15m/30m/1H/Daily moving averages; “near” means within ${CROSS_INDEX_LEVEL_THRESHOLD_PCT.toFixed(2)}%.
                 ${/closed/i.test(data.market_status || "")
                     ? " Data is from the last captured session, not live."
                     : ""}
@@ -1423,7 +1420,7 @@ function renderCrossIndexChart(data) {
                         <tr>
                             <th>Index / line</th>
                             <th>Spot LTP</th>
-                            <th>From 3m start</th>
+                            <th>From first close</th>
                             <th>Nearest support</th>
                             <th>Nearest resistance</th>
                         </tr>
@@ -1457,13 +1454,16 @@ function renderCrossIndexChart(data) {
 
     setText(
         "candleCount",
-        `${lineData.length} of ${CROSS_INDEX_ORDER.length} index lines · 3m`
+        `${lineData.length} of ${CROSS_INDEX_ORDER.length} index lines · ${timeframeLabel}`
     );
 
     if (!lineData.length) {
         if (priceContainer) {
-            priceContainer.innerHTML =
-                '<div class="chart-placeholder">No same-session 3m index candles are available for the cross-index comparison.</div>';
+            priceContainer.innerHTML = `
+                <div class="chart-placeholder">
+                    No ${escapeHtml(timeframeLabel)} index candles are available for the cross-index comparison.
+                </div>
+            `;
         }
         return;
     }
@@ -1615,7 +1615,7 @@ function renderChart() {
     const data = state.data;
     if (!data) return;
 
-    if (state.selectedTimeframe === "CrossIndex") {
+    if (state.selectedIndex === "CrossIndex") {
         renderCrossIndexChart(data);
         return;
     }
@@ -1626,18 +1626,18 @@ function renderChart() {
     const chartLegend = $("chartLegend");
     const crossSummary = $("crossIndexSummary");
     const volumeHeading = $("volumeHeading");
-    const volumeChart = $("volumeChart");
+    const volumeChartContainer = $("volumeChart");
     const rsiHeading = $("rsiHeading");
-    const rsiChart = $("rsiChart");
+    const rsiChartContainer = $("rsiChart");
     if (indexSelect) indexSelect.hidden = false;
     if (indexSelectLabel) indexSelectLabel.hidden = false;
     if (singleSummary) singleSummary.hidden = false;
     if (chartLegend) chartLegend.hidden = false;
     if (crossSummary) crossSummary.hidden = true;
     if (volumeHeading) volumeHeading.hidden = false;
-    if (volumeChart) volumeChart.hidden = false;
+    if (volumeChartContainer) volumeChartContainer.hidden = false;
     if (rsiHeading) rsiHeading.hidden = false;
-    if (rsiChart) rsiChart.hidden = false;
+    if (rsiChartContainer) rsiChartContainer.hidden = false;
 
     const indexData = data.indices?.[state.selectedIndex];
 

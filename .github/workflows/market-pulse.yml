@@ -2,14 +2,6 @@ name: Market Pulse Scheduled Analysis
 
 on:
   workflow_dispatch:
-    inputs:
-      mode:
-        description: "Run normal market analysis or a read-only FYERS data probe"
-        type: choice
-        options:
-          - analysis
-          - fyers_data_probe
-        default: analysis
 
   push:
     branches:
@@ -100,9 +92,7 @@ jobs:
           pip install requests yfinance pandas pyotp fyers-apiv3
 
       - name: Run market analysis
-        if: >-
-          steps.nse-calendar.outputs.is_trading_day == 'true' &&
-          github.event.inputs.mode != 'fyers_data_probe'
+        if: steps.nse-calendar.outputs.is_trading_day == 'true'
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -116,23 +106,8 @@ jobs:
 
         run: python TG_Alert/test/notify.py
 
-      - name: Probe FYERS futures and options data
-        if: >-
-          steps.nse-calendar.outputs.is_trading_day == 'true' &&
-          github.event_name == 'workflow_dispatch' &&
-          github.event.inputs.mode == 'fyers_data_probe'
-        env:
-          FYERS_CLIENT_ID: ${{ secrets.FYERS_CLIENT_ID }}
-          FYERS_SECRET_KEY: ${{ secrets.FYERS_SECRET_KEY }}
-          FYERS_ID: ${{ secrets.FYERS_ID }}
-          FYERS_PIN: ${{ secrets.FYERS_PIN }}
-          FYERS_TOTP_SECRET: ${{ secrets.FYERS_TOTP_SECRET }}
-        run: python TG_Alert/test/fyers_data_probe.py
-
       - name: Commit dashboard data
-        if: >-
-          steps.nse-calendar.outputs.is_trading_day == 'true' &&
-          github.event.inputs.mode != 'fyers_data_probe'
+        if: steps.nse-calendar.outputs.is_trading_day == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -151,16 +126,12 @@ jobs:
           fi
 
       - name: Upload dashboard for GitHub Pages
-        if: >-
-          steps.nse-calendar.outputs.is_trading_day == 'true' &&
-          github.event.inputs.mode != 'fyers_data_probe'
+        if: steps.nse-calendar.outputs.is_trading_day == 'true'
         uses: actions/upload-pages-artifact@v3
         with:
           path: dashboard
 
       - name: Deploy dashboard to GitHub Pages
-        if: >-
-          steps.nse-calendar.outputs.is_trading_day == 'true' &&
-          github.event.inputs.mode != 'fyers_data_probe'
+        if: steps.nse-calendar.outputs.is_trading_day == 'true'
         id: deployment
         uses: actions/deploy-pages@v4

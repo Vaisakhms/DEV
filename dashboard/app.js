@@ -722,8 +722,6 @@ function renderCombinedDecision(data) {
     const staleSnapshot = snapshotAge === null
         || snapshotAge < 0
         || snapshotAge > 10 * 60 * 1000;
-    const marketClosed = /closed/i.test(data.market_status || "")
-        || staleSnapshot;
     const snapshotAgeLabel = snapshotAge === null
         ? "age unavailable"
         : snapshotAge < 0
@@ -738,47 +736,19 @@ function renderCombinedDecision(data) {
         : "Timestamp unavailable";
     const bias = combinedMarketBias(data);
     const crossIndexBias = crossIndexSignalFromSnapshot(data);
-    const mainDecision = ["BUY ATM CE", "BUY ATM PE"].includes(strategy.decision)
-        ? strategy.decision
+    const mainStrategy = strategy.main_strategy || {};
+    const mainPlanDecision = mainStrategy.decision || strategy.decision;
+    const mainDecision = ["BUY ATM CE", "BUY ATM PE"].includes(mainPlanDecision)
+        ? mainPlanDecision
         : "WAIT";
     const scalp = strategy.scalp_opportunity || {};
-    const scalpDecision = marketClosed
-        ? "WAIT"
-        : ["BUY ATM CE", "BUY ATM PE"].includes(scalp.decision)
-            ? scalp.decision
-            : scalp.decision === "WAIT"
-                ? "WAIT"
-                : "Unavailable";
-    const candidate = mainDecision !== "WAIT"
+    const scalpDecision = ["BUY ATM CE", "BUY ATM PE"].includes(scalp.decision)
+        ? scalp.decision
+        : "WAIT";
+    const combinedDecision = mainDecision !== "WAIT"
         ? mainDecision
-        : scalpDecision.startsWith("BUY ATM")
-            ? scalpDecision
-            : "WAIT";
-    const candidateDirection = candidate.endsWith("CE")
-        ? "Bullish"
-        : candidate.endsWith("PE")
-            ? "Bearish"
-            : null;
-    const conflictsWithBias = Boolean(
-        candidateDirection
-        && (bias.direction === "Bullish" || bias.direction === "Bearish")
-        && candidateDirection !== bias.direction
-    );
-    const strategyDecision = marketClosed || conflictsWithBias
-        ? "WAIT"
-        : candidate;
-    const crossIndexDecision = crossIndexBias.action === "ATM BUY CE"
-        ? "BUY ATM CE"
-        : crossIndexBias.action === "ATM BUY PE"
-            ? "BUY ATM PE"
-            : "WAIT";
-    const isCrossIndexOnly = strategyDecision === "WAIT"
-        && crossIndexDecision !== "WAIT";
-    const combinedDecision = isCrossIndexOnly
-        ? crossIndexDecision
-        : strategyDecision;
-    const isScalpOnly = !isCrossIndexOnly
-        && mainDecision === "WAIT"
+        : scalpDecision;
+    const isScalpOnly = mainDecision === "WAIT"
         && scalpDecision.startsWith("BUY ATM")
         && combinedDecision !== "WAIT";
     const decisionClass = combinedDecision === "BUY ATM CE"
@@ -787,24 +757,12 @@ function renderCombinedDecision(data) {
         : "wait";
     const decisionText = combinedDecision === "WAIT"
         ? "WAIT"
-        : `${isCrossIndexOnly
-            ? "CROSS-INDEX · "
-            : isScalpOnly
-                ? "SCALP ONLY · "
-                : ""}${combinedDecision}`;
-    const decisionReason = isCrossIndexOnly
-        ? `${crossIndexBias.explanation} Level-confluence bias from the last captured prices; confirm price action and option-chain conditions before entry.`
-        : marketClosed
-        ? /closed/i.test(data.market_status || "")
-            ? "Market is closed; stored signals are not live trade calls."
-            : `Market data is ${snapshotAgeLabel}; live signals are disabled when data is over 10 minutes old.`
-        : conflictsWithBias
-            ? `${candidate} conflicts with the weighted overall market bias. Wait for alignment or reassessment.`
-            : candidate === "WAIT"
-                ? "Neither the main strategy nor the scalp setup has a valid entry signal."
-                : bias.direction === "Neutral / mixed"
-                    ? "Signal passed; broad market inputs are mixed, so treat it cautiously."
-                    : `Signal passed and agrees with the weighted ${bias.direction.toLowerCase()} market bias.`;
+        : `${isScalpOnly ? "SCALP ONLY · " : ""}${combinedDecision}`;
+    const decisionReason = mainDecision !== "WAIT"
+        ? `${mainStrategy.reason || "Main strategy conditions passed."} Based on the last captured snapshot; not a live quote.`
+        : isScalpOnly
+            ? `${scalp.reason || "Scalp conditions passed."} Intended scalp duration: up to ${formatNumber(scalp.duration_minutes, 0)} minutes. Based on the last captured snapshot; not a live quote.`
+        : mainStrategy.reason || scalp.reason || "Required directional setup is not confirmed.";
 
     const nifty = indices["Nifty 50"] || {};
     const niftyFrames = nifty.timeframes || {};
@@ -868,13 +826,13 @@ function renderCombinedDecision(data) {
         <div class="combined-metrics">
             <div class="combined-metric">
                 <span class="eyebrow">MAIN STRATEGY</span>
-                <strong>${escapeHtml(marketClosed ? "WAIT" : mainDecision)}</strong>
-                <small>${escapeHtml(strategy.reasons?.[0] || "See detailed strategy filters.")}</small>
+                <strong>${escapeHtml(mainDecision)}</strong>
+                <small>${escapeHtml(mainStrategy.reason || "See main strategy confirmations.")}</small>
             </div>
             <div class="combined-metric">
                 <span class="eyebrow">SCALP OPPORTUNITY</span>
                 <strong class="${scalpDecision.endsWith("CE") ? "positive" : scalpDecision.endsWith("PE") ? "negative" : "neutral"}">${escapeHtml(scalpDecision)}</strong>
-                <small>${escapeHtml(/closed/i.test(data.market_status || "") ? "Market closed." : staleSnapshot ? "Latest snapshot is stale; no live signal." : scalp.reason || "Scalp data unavailable.")}</small>
+                <small>${escapeHtml(`${scalp.reason || "Scalp setup is not confirmed."} ${staleSnapshot || /closed/i.test(data.market_status || "") ? "Based on last captured prices; not live." : ""}`)}</small>
             </div>
             <div class="combined-metric">
                 <span class="eyebrow">CROSS-INDEX LEVEL BIAS</span>
@@ -904,9 +862,8 @@ function renderCombinedDecision(data) {
         </div>
         <div class="combined-footer muted small-text">
             Composite bias uses the weighted backend score components${coverage === null ? "" : ` · ${coverage.toFixed(0)}% input coverage`}${supportingComponents.length ? ` · largest ${bias.direction === "Bearish" ? "bearish" : "bullish"} inputs: ${escapeHtml(supportingComponents.join(", "))}` : ""}.
-            ${conflictsWithBias ? " The signal is held at WAIT because the trade direction conflicts with strong aggregate bias." : ""}
             ${staleSnapshot && !/closed/i.test(data.market_status || "") ? ` Snapshot is stale (${escapeHtml(snapshotAgeLabel)}).` : ""}
-            Signals are informational only; no broker orders are placed.
+            Decisions use the last captured snapshot regardless of market status. Signals are informational only; no broker orders are placed.
         </div>
     `;
 }
@@ -998,7 +955,6 @@ function renderPriceActionDecision(data) {
     `;
 
     const strategy = data.strategy || {};
-    const marketClosed = /closed/i.test(data.market_status || "");
     const snapshotTimestamp = Date.parse(data.generated_at || "");
     const snapshotAge = Number.isFinite(snapshotTimestamp)
         ? Date.now() - snapshotTimestamp
@@ -1006,28 +962,23 @@ function renderPriceActionDecision(data) {
     const staleSnapshot = snapshotAge === null
         || snapshotAge < 0
         || snapshotAge > 10 * 60 * 1000;
-    const liveDataUnavailable = marketClosed || staleSnapshot;
+    const lastCapturedLabel = staleSnapshot || /closed/i.test(data.market_status || "")
+        ? "Based on the last captured snapshot; not live."
+        : "Based on the latest captured snapshot; not a live quote.";
+    const mainStrategy = strategy.main_strategy || {};
     const scalpOpportunity = strategy.scalp_opportunity || {};
-    const scalpDecision = liveDataUnavailable
-        ? "WAIT"
-        : scalpOpportunity.decision || "WAIT";
-    const scalpReason = marketClosed
-        ? "Market closed; stored scalp data is not a live signal."
-        : staleSnapshot
-            ? "Latest snapshot is stale; no live scalp signal is available."
-        : scalpOpportunity.reason || "Scalp signal unavailable.";
+    const scalpDecision = ["BUY ATM CE", "BUY ATM PE"].includes(scalpOpportunity.decision)
+        ? scalpOpportunity.decision
+        : "WAIT";
+    const scalpReason = `${scalpOpportunity.reason || "Scalp signal unavailable."} ${lastCapturedLabel}`;
     const supportWatch = strategy.support_watch || {};
-    const supportWatchStatus = liveDataUnavailable && supportWatch.status
-        ? `${supportWatch.status} (stored)`
-        : supportWatch.status || "Unavailable";
+    const supportWatchStatus = supportWatch.status || "Unavailable";
     const supportIndexSummary = (supportWatch.indices || []).map(item => {
         const distance = number(item.distance_pct);
         const level = number(item.support_price);
         return `${item.name}: ${item.status}${level === null ? "" : ` at ${formatNumber(level, 0)}`}${distance === null ? "" : ` (${distance.toFixed(2)}%)`}`;
     }).join(" · ");
-    const supportWatchReason = liveDataUnavailable
-        ? "Stored support readings only; refresh during market hours for a live assessment."
-        : supportWatch.reason
+    const supportWatchReason = supportWatch.reason
             ? `${supportWatch.reason} Approach threshold: ${formatNumber(supportWatch.threshold_pct, 2)}%.`
             : "Support proximity data unavailable.";
     const scalpClass = scalpDecision === "BUY ATM CE"
@@ -1040,8 +991,9 @@ function renderPriceActionDecision(data) {
     const pcrDisplay = latestPcr === null
         ? "Unavailable"
         : `${latestPcr.toFixed(2)}${number(oi.pcr) === null ? " (snapshot)" : ""}`;
-    const signal = ["BUY ATM CE", "BUY ATM PE"].includes(strategy.decision)
-        ? strategy.decision
+    const mainPlanDecision = mainStrategy.decision || strategy.decision;
+    const signal = ["BUY ATM CE", "BUY ATM PE"].includes(mainPlanDecision)
+        ? mainPlanDecision
         : "WAIT";
     const signalClass = signal === "BUY ATM CE"
         ? "buy-call"
@@ -1061,8 +1013,6 @@ function renderPriceActionDecision(data) {
         );
     const levelDistance = number(strategy.level_distance_pct);
     const positionAction = strategy.position_action || "";
-    const requiredInputsAvailable =
-        strategy.entry_filters?.required_data === true;
     const nifty15mCandles =
         data.indices?.["Nifty 50"]?.charts?.["15m"] || [];
     const lastNifty15mCandle = nifty15mCandles.reduce((latest, candle) => {
@@ -1076,13 +1026,8 @@ function renderPriceActionDecision(data) {
         : formatDashboardDateTime(
             new Date((lastNifty15mCandle + 15 * 60) * 1000).toISOString()
         );
-    const freshnessMessage = marketClosed
-        ? `Market closed — showing the latest available session data. Last completed Nifty 15m candle: ${lastNifty15mClose || "unavailable"} IST. No live entry signal is available after hours.`
-        : staleSnapshot
-            ? "Latest snapshot is stale; stored strategy readings are not live signals."
-        : !requiredInputsAvailable
-            ? "Main strategy requires all market-data gates. The separate scalp signal uses fresh Nifty candles and live ATM quotes."
-            : "Market open — entries still require fresh completed candles, option-chain confirmation, and every strategy gate to pass.";
+    const freshnessMessage = `${lastCapturedLabel} Latest completed Nifty 15m candle: ${lastNifty15mClose || "unavailable"} IST. Decisions are evaluated from the snapshot without market-hours or freshness gates.`;
+    const mainComponents = mainStrategy.components || {};
 
     decision.innerHTML = `
         <h3>Nifty ATM Strategy Decision</h3>
@@ -1095,6 +1040,19 @@ function renderPriceActionDecision(data) {
             <strong class="${scalpClass}">${escapeHtml(scalpDecision)}</strong>
         </div>
         <p class="muted small-text">${escapeHtml(scalpReason)}</p>
+        <p class="muted small-text">${escapeHtml(`Scalp duration: up to ${formatNumber(scalpOpportunity.duration_minutes, 0)} minutes. Trigger: ${formatNumber(scalpOpportunity.entry_trigger)} · invalidation: ${formatNumber(scalpOpportunity.invalidation_level)}.`)}</p>
+        <div class="summary-row">
+            <span>Main strategy confirmation</span>
+            <strong>${escapeHtml(mainStrategy.reason || "Unavailable")}</strong>
+        </div>
+        <div class="summary-row">
+            <span>Main score / 5 (cross-index · market · OI · scalp)</span>
+            <strong>${formatNumber(mainStrategy.score, 0)} / ${formatNumber(mainStrategy.score_max, 0)} (${formatNumber(mainComponents.cross_index, 0)} · ${formatNumber(mainComponents.weighted_market_bias, 0)} · ${formatNumber(mainComponents.atm_oi, 0)} · ${formatNumber(mainComponents.scalp, 0)})</strong>
+        </div>
+        <div class="summary-row">
+            <span>15m confirmation · first target / invalidation</span>
+            <strong>${escapeHtml(mainStrategy.price_confirmed ? "Confirmed" : "Not confirmed")} · ${formatNumber(mainStrategy.first_target)} / ${formatNumber(mainStrategy.invalidation_level)}</strong>
+        </div>
         <div class="summary-row">
             <span>Cross-index support stage (watch only)</span>
             <strong>${escapeHtml(supportWatchStatus)}</strong>
@@ -1102,7 +1060,7 @@ function renderPriceActionDecision(data) {
         <p class="muted small-text">${escapeHtml(supportWatchReason)}</p>
         ${supportIndexSummary ? `<p class="muted small-text">${escapeHtml(supportIndexSummary)}</p>` : ""}
         <p class="muted small-text">
-            Support approach alone is not an entry. Scalp confirmation, fresh options data, and existing risk gates still apply; scale-ins are not modeled without broker-synced fills.
+            Support approach is context, not an entry by itself. Scalp and main strategy decisions use the latest captured prices and option snapshot; they do not place orders or model scale-ins.
         </p>
         <div class="summary-row">
             <span>Decision time (IST)</span>
@@ -1113,11 +1071,11 @@ function renderPriceActionDecision(data) {
             <strong>${formatNumber(strategy.lot_size, 0)}</strong>
         </div>
         <div class="summary-row">
-            <span>CE / PE / net points</span>
+            <span>Legacy engine CE / PE / net points</span>
             <strong>${formatNumber(strategy.ce_points, 1)} / ${formatNumber(strategy.pe_points, 1)} / ${formatNumber(strategy.net_score, 1)}</strong>
         </div>
         <div class="summary-row">
-            <span>3m trigger</span>
+            <span>Legacy engine 3m trigger</span>
             <strong>${escapeHtml(strategy.trigger_3m || "Unavailable")}</strong>
         </div>
         <div class="summary-row">
@@ -1133,8 +1091,8 @@ function renderPriceActionDecision(data) {
             <strong>${escapeHtml(level.name || "Unavailable")} ${formatNumber(level.price)}${levelDistance === null ? "" : ` (${levelDistance.toFixed(2)}%)`}</strong>
         </div>
         <p><strong>15m level confirmations:</strong> ${escapeHtml(levelEvents.join("; ") || "None")}</p>
-        <p><strong>Matched setups:</strong> ${escapeHtml(setups.map(item => `${item.name} → ${item.direction} +${item.points}`).join("; ") || "None")}</p>
-        <p><strong>Reason:</strong> ${escapeHtml(reasons.join(" ") || "No reason provided.")}</p>
+        <p><strong>Legacy matched setups:</strong> ${escapeHtml(setups.map(item => `${item.name} → ${item.direction} +${item.points}`).join("; ") || "None")}</p>
+        <p><strong>Main strategy reason:</strong> ${escapeHtml(mainStrategy.reason || "No reason provided.")}</p>
         ${positionAction ? `<p><strong>Position action:</strong> ${escapeHtml(positionAction)}</p>` : ""}
         ${position.direction ? `
             <div class="summary-row">
@@ -1522,20 +1480,34 @@ function renderCrossIndexChart(data) {
     const nearSupportCount = rows.filter(row => row.nearSupport).length;
     const nearResistanceCount = rows.filter(row => row.nearResistance).length;
     const signal = crossIndexSignal(rows);
+    const scalp = data.strategy?.scalp_opportunity || {};
+    const scalpDecision = ["BUY ATM CE", "BUY ATM PE"].includes(scalp.decision)
+        ? scalp.decision
+        : "WAIT";
+    const scalpDirection = scalpDecision.endsWith("CE")
+        ? "bullish"
+        : scalpDecision.endsWith("PE")
+            ? "bearish"
+            : "neutral";
     if (crossSummary) {
         crossSummary.innerHTML = `
-            <section class="cross-index-signal is-${signal.direction}" aria-live="polite">
+            <section class="cross-index-signal is-${scalpDirection}" aria-live="polite">
                 <div class="cross-index-signal-heading">
-                    <span class="cross-index-signal-label">NIFTY 50 ATM · CROSS-INDEX SCALP BIAS</span>
+                    <span class="cross-index-signal-label">NIFTY 50 ATM · 15-MIN SCALP</span>
+                    <strong>${escapeHtml(scalpDecision)}</strong>
+                </div>
+                <p>${escapeHtml(scalp.reason || "Scalp entry conditions are not confirmed.")}</p>
+            </section>
+            <section class="cross-index-signal is-${signal.direction}">
+                <div class="cross-index-signal-heading">
+                    <span class="cross-index-signal-label">CROSS-INDEX LEVEL CONFLUENCE</span>
                     <strong>${escapeHtml(signal.action)}</strong>
                 </div>
-                <p>${escapeHtml(signal.explanation)}</p>
+                <p>${escapeHtml(signal.explanation)} This is level context, not an entry signal by itself.</p>
             </section>
             <p class="cross-index-note">
                 Lines show each index's change from its first ${escapeHtml(timeframeLabel)} candle close, so crossovers are comparable despite different point scales. Spot prices stay in index points below. Key levels include session and previous-day highs/lows, 5- and 7-session ranges, pivots, and 15m/30m/1H/Daily moving averages. “Near” means within ${CROSS_INDEX_LEVEL_THRESHOLD_PCT.toFixed(2)}%.
-                ${/closed/i.test(data.market_status || "")
-                    ? " Data is from the last captured session, not live."
-                    : ""}
+                Decision cards use the latest captured snapshot whether or not the market is open; they are not live quotes.
             </p>
             <p class="cross-index-note">
                 Near a level now: ${nearSupportCount} index${nearSupportCount === 1 ? "" : "es"} at support · ${nearResistanceCount} at resistance.

@@ -9,6 +9,7 @@ from strategy_engine import (
     _level_veto,
     _oi_state,
     _scalp_opportunity,
+    _support_watch,
     _trend,
     _trigger,
     evaluate_strategy,
@@ -16,6 +17,55 @@ from strategy_engine import (
 
 
 class StrategyRuleTests(unittest.TestCase):
+    def test_support_watch_requires_nifty_and_another_index_near_support(self):
+        indices = {
+            "Nifty 50": {"frames": {"15m": {"analysis": {"close": 100.2}}}},
+            "Bank Nifty": {"frames": {"15m": {"analysis": {"close": 200.4}}}},
+            "Nifty Midcap": {"frames": {"15m": {"analysis": {"close": 310}}}},
+            "Nifty 100": {"frames": {"15m": {"analysis": {"close": 420}}}},
+        }
+        levels = {
+            "Nifty 50": [{"name": "S1", "price": 100, "side": "support"}],
+            "Bank Nifty": [{"name": "S1", "price": 200, "side": "support"}],
+            "Nifty Midcap": [{"name": "S1", "price": 300, "side": "support"}],
+            "Nifty 100": [{"name": "S1", "price": 400, "side": "support"}],
+        }
+
+        watch = _support_watch(indices, levels, {})
+
+        self.assertEqual(watch["status"], "SUPPORT WATCH")
+        self.assertTrue(watch["active"])
+        self.assertEqual(watch["near_count"], 2)
+        self.assertEqual(watch["near_indices"], ["Nifty 50", "Bank Nifty"])
+
+    def test_nifty_support_breakdown_invalidates_support_watch(self):
+        indices = {
+            name: {"frames": {"15m": {"analysis": {"close": 100.1}}}}
+            for name in ("Nifty 50", "Bank Nifty", "Nifty Midcap", "Nifty 100")
+        }
+        levels = {
+            name: [{"name": "S1", "price": 100, "side": "support"}]
+            for name in indices
+        }
+        events = {
+            "Nifty 50": {
+                "kind": "support breakdown",
+                "level": {"name": "S1", "price": 100},
+            }
+        }
+
+        watch = _support_watch(indices, levels, events)
+
+        self.assertEqual(watch["status"], "INVALIDATED")
+        self.assertFalse(watch["active"])
+        self.assertEqual(watch["nifty_status"], "BROKEN")
+
+    def test_support_watch_is_unavailable_without_index_data(self):
+        watch = _support_watch({}, {}, {})
+
+        self.assertEqual(watch["status"], "UNAVAILABLE")
+        self.assertFalse(watch["active"])
+
     def test_level_setups_accept_different_confirmation_types_in_same_direction(self):
         events = {
             "Nifty 50": {"direction": "CE", "kind": "support hold"},

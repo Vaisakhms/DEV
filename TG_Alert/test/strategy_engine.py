@@ -7,6 +7,7 @@ IST = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
 INDEX_NAMES = ("Nifty 50", "Bank Nifty", "Nifty Midcap", "Nifty 100")
 TREND_FRAMES = ("5m", "10m", "15m")
 SCORE_THRESHOLD = 5.0
+SUPPORT_WATCH_THRESHOLD_PCT = 0.30
 
 
 def _number(value):
@@ -281,6 +282,107 @@ def _event(candles, levels, near_percent):
                 return {"direction": "PE", "kind": "resistance rejection",
                         "level": level}
     return None
+
+
+def _support_watch(indices, per_index_levels, events):
+    index_states = []
+    for name in INDEX_NAMES:
+        index_data = indices.get(name) or {}
+        frame = (index_data.get("frames") or {}).get("15m") or {}
+        analysis = frame.get("analysis") or frame
+        spot = _number(analysis.get("close"))
+        supports = [
+            level for level in per_index_levels.get(name, [])
+            if level.get("side") == "support"
+            and _number(level.get("price")) is not None
+            and _number(level.get("price")) <= spot
+        ] if spot is not None else []
+        nearest = max(
+            supports,
+            key=lambda level: _number(level.get("price")),
+            default=None,
+        )
+        event = events.get(name) or {}
+        event_level = event.get("level") or {}
+        event_price = _number(event_level.get("price"))
+        distance = (
+            abs(spot - _number(nearest["price"])) / spot * 100
+            if nearest and spot and spot > 0 else None
+        )
+        event_distance = (
+            abs(spot - event_price) / spot * 100
+            if event_price is not None and spot and spot > 0 else None
+        )
+
+        if spot is None or not per_index_levels.get(name):
+            status = "UNAVAILABLE"
+        elif (
+            event.get("kind") == "support breakdown"
+            and event_distance is not None
+            and event_distance <= SUPPORT_WATCH_THRESHOLD_PCT + 0.20
+        ):
+            status = "BROKEN"
+        elif (
+            event.get("kind") == "support hold"
+            and event_distance is not None
+            and event_distance <= SUPPORT_WATCH_THRESHOLD_PCT
+        ):
+            status = "HOLDING"
+        elif distance is not None and distance <= SUPPORT_WATCH_THRESHOLD_PCT:
+            status = "NEAR"
+        else:
+            status = "CLEAR"
+
+        index_states.append({
+            "name": name,
+            "status": status,
+            "support_name": nearest.get("name") if nearest else (
+                event_level.get("name") if status in ("BROKEN", "HOLDING") else None
+            ),
+            "support_price": _number(nearest.get("price")) if nearest else (
+                event_price if status in ("BROKEN", "HOLDING") else None
+            ),
+            "distance_pct": round(distance, 3) if distance is not None else (
+                round(event_distance, 3) if event_distance is not None else None
+            ),
+        })
+
+    near_indices = [
+        item["name"] for item in index_states
+        if item["status"] in ("NEAR", "HOLDING")
+    ]
+    nifty_status = index_states[0]["status"]
+    if nifty_status == "BROKEN":
+        status = "INVALIDATED"
+    elif nifty_status == "UNAVAILABLE" or any(
+        item["status"] == "UNAVAILABLE" for item in index_states
+    ):
+        status = "UNAVAILABLE"
+    elif nifty_status in ("NEAR", "HOLDING") and len(near_indices) >= 2:
+        status = "SUPPORT WATCH"
+    else:
+        status = "NO CONFLUENCE"
+
+    return {
+        "status": status,
+        "active": status == "SUPPORT WATCH",
+        "near_count": len(near_indices),
+        "required_count": 2,
+        "threshold_pct": SUPPORT_WATCH_THRESHOLD_PCT,
+        "nifty_status": nifty_status,
+        "near_indices": near_indices,
+        "indices": index_states,
+        "reason": (
+            "Nifty and at least one other index are near/holding their own "
+            "support. This is a watch state, not an entry signal."
+            if status == "SUPPORT WATCH"
+            else "Nifty support is broken; the bullish support thesis is invalidated."
+            if status == "INVALIDATED"
+            else "Waiting for Nifty and another index to approach their own support."
+            if status == "NO CONFLUENCE"
+            else "Support proximity cannot be assessed from the available index data."
+        ),
+    }
 
 
 def _event_confirms_level(event, kind, level):
@@ -613,6 +715,7 @@ def evaluate_strategy(now, indices, pivots, options, previous, state,
         candles = (frames[name].get("15m") or {}).get("candles") or []
         percent = 0.2 if name == "Bank Nifty" else 0.15
         events[name] = _event(candles, per_index_levels[name], percent)
+    support_watch = _support_watch(indices, per_index_levels, events)
     scalp_opportunity = _scalp_opportunity(
         now,
         indices.get("Nifty 50") or {},
@@ -1049,6 +1152,7 @@ def evaluate_strategy(now, indices, pivots, options, previous, state,
         "trigger_3m": trigger,
         "consolidating": consolidating,
         "level_events": events,
+        "support_watch": support_watch,
         "entry_filters": entry_filters,
         "oi": oi,
         "nearest_major_level": nearest,

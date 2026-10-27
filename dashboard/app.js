@@ -977,13 +977,37 @@ function renderPriceActionDecision(data) {
 
     const strategy = data.strategy || {};
     const marketClosed = /closed/i.test(data.market_status || "");
+    const snapshotTimestamp = Date.parse(data.generated_at || "");
+    const snapshotAge = Number.isFinite(snapshotTimestamp)
+        ? Date.now() - snapshotTimestamp
+        : null;
+    const staleSnapshot = snapshotAge === null
+        || snapshotAge < 0
+        || snapshotAge > 10 * 60 * 1000;
+    const liveDataUnavailable = marketClosed || staleSnapshot;
     const scalpOpportunity = strategy.scalp_opportunity || {};
-    const scalpDecision = marketClosed
+    const scalpDecision = liveDataUnavailable
         ? "WAIT"
         : scalpOpportunity.decision || "WAIT";
     const scalpReason = marketClosed
         ? "Market closed; stored scalp data is not a live signal."
+        : staleSnapshot
+            ? "Latest snapshot is stale; no live scalp signal is available."
         : scalpOpportunity.reason || "Scalp signal unavailable.";
+    const supportWatch = strategy.support_watch || {};
+    const supportWatchStatus = liveDataUnavailable && supportWatch.status
+        ? `${supportWatch.status} (stored)`
+        : supportWatch.status || "Unavailable";
+    const supportIndexSummary = (supportWatch.indices || []).map(item => {
+        const distance = number(item.distance_pct);
+        const level = number(item.support_price);
+        return `${item.name}: ${item.status}${level === null ? "" : ` at ${formatNumber(level, 0)}`}${distance === null ? "" : ` (${distance.toFixed(2)}%)`}`;
+    }).join(" · ");
+    const supportWatchReason = liveDataUnavailable
+        ? "Stored support readings only; refresh during market hours for a live assessment."
+        : supportWatch.reason
+            ? `${supportWatch.reason} Approach threshold: ${formatNumber(supportWatch.threshold_pct, 2)}%.`
+            : "Support proximity data unavailable.";
     const scalpClass = scalpDecision === "BUY ATM CE"
         ? "buy-call"
         : scalpDecision === "BUY ATM PE"
@@ -1032,6 +1056,8 @@ function renderPriceActionDecision(data) {
         );
     const freshnessMessage = marketClosed
         ? `Market closed — showing the latest available session data. Last completed Nifty 15m candle: ${lastNifty15mClose || "unavailable"} IST. No live entry signal is available after hours.`
+        : staleSnapshot
+            ? "Latest snapshot is stale; stored strategy readings are not live signals."
         : !requiredInputsAvailable
             ? "Main strategy requires all market-data gates. The separate scalp signal uses fresh Nifty candles and live ATM quotes."
             : "Market open — entries still require fresh completed candles, option-chain confirmation, and every strategy gate to pass.";
@@ -1047,6 +1073,15 @@ function renderPriceActionDecision(data) {
             <strong class="${scalpClass}">${escapeHtml(scalpDecision)}</strong>
         </div>
         <p class="muted small-text">${escapeHtml(scalpReason)}</p>
+        <div class="summary-row">
+            <span>Cross-index support stage (watch only)</span>
+            <strong>${escapeHtml(supportWatchStatus)}</strong>
+        </div>
+        <p class="muted small-text">${escapeHtml(supportWatchReason)}</p>
+        ${supportIndexSummary ? `<p class="muted small-text">${escapeHtml(supportIndexSummary)}</p>` : ""}
+        <p class="muted small-text">
+            Support approach alone is not an entry. Scalp confirmation, fresh options data, and existing risk gates still apply; scale-ins are not modeled without broker-synced fills.
+        </p>
         <div class="summary-row">
             <span>Decision time (IST)</span>
             <strong>${escapeHtml(formatDashboardDateTime(strategy.timestamp_ist || ""))}</strong>

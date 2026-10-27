@@ -341,6 +341,16 @@ function renderIndexCards(data) {
         button.addEventListener("click", () => {
             state.selectedIndex = button.dataset.index;
 
+            if (state.selectedTimeframe === "CrossIndex") {
+                state.selectedTimeframe = "Daily";
+                document.querySelectorAll("[data-timeframe]").forEach(item => {
+                    item.classList.toggle(
+                        "active",
+                        item.dataset.timeframe === "Daily"
+                    );
+                });
+            }
+
             const select = $("indexSelect");
             if (select) select.value = state.selectedIndex;
 
@@ -1195,6 +1205,312 @@ function validCandles(candles) {
         .filter((c, i, arr) => i === 0 || c.time > arr[i - 1].time);
 }
 
+const CROSS_INDEX_ORDER = [
+    "Nifty 50",
+    "Bank Nifty",
+    "Nifty 100",
+    "Nifty Midcap",
+    "Sensex"
+];
+
+const CROSS_INDEX_COLORS = {
+    "Nifty 50": "#38bdf8",
+    "Bank Nifty": "#f59e0b",
+    "Nifty 100": "#a78bfa",
+    "Nifty Midcap": "#35d69a",
+    "Sensex": "#ff6b7d"
+};
+
+const CROSS_INDEX_LEVEL_THRESHOLD_PCT = 0.30;
+
+function crossIndexLevels(indexData, spot) {
+    const levels = [];
+    const addLevel = (name, value, side) => {
+        const price = number(value);
+        if (price !== null && price > 0) levels.push({ name, price, side });
+    };
+
+    const supplied = indexData.levels || {};
+    for (const [name, value] of Object.entries(supplied.pivots || {})) {
+        if (name.startsWith("S")) addLevel(name, value, "support");
+        else if (name.startsWith("R")) addLevel(name, value, "resistance");
+    }
+    addLevel("Previous-day low", supplied.previous_day_low, "support");
+    addLevel("Previous-day high", supplied.previous_day_high, "resistance");
+    addLevel("7-session low", indexData.seven_day?.lo, "support");
+    addLevel("7-session high", indexData.seven_day?.hi, "resistance");
+
+    for (const timeframe of ["15m", "30m", "1h", "Daily"]) {
+        const sma = indexData.timeframes?.[timeframe]?.sma || {};
+        for (const period of ["20", "50", "100"]) {
+            const price = number(sma[period]);
+            if (price === null || spot === null) continue;
+            addLevel(
+                `SMA ${period} ${timeframe}`,
+                price,
+                price <= spot ? "support" : "resistance"
+            );
+        }
+    }
+
+    const unique = levels.filter((level, index) =>
+        levels.findIndex(item =>
+            item.side === level.side
+            && Math.abs(item.price - level.price) < 0.01
+        ) === index
+    );
+    const supports = unique.filter(level =>
+        level.side === "support" && level.price <= spot
+    );
+    const resistances = unique.filter(level =>
+        level.side === "resistance" && level.price >= spot
+    );
+    const support = supports.reduce(
+        (nearest, level) => !nearest || level.price > nearest.price
+            ? level
+            : nearest,
+        null
+    );
+    const resistance = resistances.reduce(
+        (nearest, level) => !nearest || level.price < nearest.price
+            ? level
+            : nearest,
+        null
+    );
+
+    return {
+        support,
+        resistance,
+        supportDistance: support && spot > 0
+            ? (spot - support.price) / spot * 100
+            : null,
+        resistanceDistance: resistance && spot > 0
+            ? (resistance.price - spot) / spot * 100
+            : null
+    };
+}
+
+function marketDate(timestamp) {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Kolkata",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit"
+    }).formatToParts(new Date(timestamp * 1000));
+    const values = Object.fromEntries(
+        parts.map(part => [part.type, part.value])
+    );
+    return `${values.year}-${values.month}-${values.day}`;
+}
+
+function renderCrossIndexChart(data) {
+    const indexSelect = $("indexSelect");
+    const indexSelectLabel = $("indexSelectLabel");
+    const singleSummary = $("singleIndexSummary");
+    const chartLegend = $("chartLegend");
+    const crossSummary = $("crossIndexSummary");
+    const volumeHeading = $("volumeHeading");
+    const volumeChart = $("volumeChart");
+    const rsiHeading = $("rsiHeading");
+    const rsiChart = $("rsiChart");
+    const priceContainer = $("priceChart");
+
+    if (indexSelect) indexSelect.hidden = true;
+    if (indexSelectLabel) indexSelectLabel.hidden = true;
+    if (singleSummary) singleSummary.hidden = true;
+    if (chartLegend) chartLegend.hidden = true;
+    if (crossSummary) crossSummary.hidden = false;
+    if (volumeHeading) volumeHeading.hidden = true;
+    if (volumeChart) volumeChart.hidden = true;
+    if (rsiHeading) rsiHeading.hidden = true;
+    if (rsiChart) rsiChart.hidden = true;
+    setText("chartInstrument", "CrossIndex · 3m relative performance");
+    setText("chartPrice", "5 indices");
+    setText("chartChange", "% from first 3m close");
+
+    clearCharts();
+
+    const generatedAt = Date.parse(data.generated_at || "");
+    const sessionDate = Number.isFinite(generatedAt)
+        ? marketDate(Math.floor(generatedAt / 1000))
+        : null;
+    const currentTime = Number.isFinite(generatedAt)
+        ? Math.floor(generatedAt / 1000)
+        : null;
+    const isRecentOpenSnapshot =
+        !/closed/i.test(data.market_status || "")
+        && currentTime !== null
+        && Date.now() - generatedAt >= 0
+        && Date.now() - generatedAt <= 10 * 60 * 1000;
+    const lineData = [];
+    const rows = [];
+
+    for (const name of CROSS_INDEX_ORDER) {
+        const item = data.indices?.[name] || {};
+        const candles = validCandles(item.charts?.["3m"] || []).filter(candle =>
+            !sessionDate || marketDate(candle.time) === sessionDate
+        );
+        const spot = number(item.ltp, number(item.timeframes?.["3m"]?.ltp));
+        const baseline = number(candles[0]?.close);
+        const points = baseline !== null && baseline > 0
+            ? candles.map(candle => ({
+                time: candle.time,
+                value: (Number(candle.close) / baseline - 1) * 100
+            }))
+            : [];
+        if (
+            points.length
+            && isRecentOpenSnapshot
+            && spot !== null
+            && currentTime > points[points.length - 1].time
+        ) {
+            points.push({
+                time: currentTime,
+                value: (spot / baseline - 1) * 100
+            });
+        }
+        const sessionChange = spot !== null && baseline !== null && baseline > 0
+            ? (spot / baseline - 1) * 100
+            : points.length
+                ? points[points.length - 1].value
+                : null;
+        const levels = crossIndexLevels(item, spot);
+        const nearSupport = levels.supportDistance !== null
+            && levels.supportDistance <= CROSS_INDEX_LEVEL_THRESHOLD_PCT;
+        const nearResistance = levels.resistanceDistance !== null
+            && levels.resistanceDistance <= CROSS_INDEX_LEVEL_THRESHOLD_PCT;
+
+        rows.push({
+            name,
+            displayName: name === "Nifty 100"
+                ? "Nifty 100 (Large Cap)"
+                : name,
+            color: CROSS_INDEX_COLORS[name],
+            spot,
+            sessionChange,
+            levels,
+            nearSupport,
+            nearResistance,
+            hasCandles: points.length > 0
+        });
+        if (points.length) {
+            lineData.push({
+                name,
+                color: CROSS_INDEX_COLORS[name],
+                points,
+                baseline,
+                levels
+            });
+        }
+    }
+
+    const nearSupportCount = rows.filter(row => row.nearSupport).length;
+    const nearResistanceCount = rows.filter(row => row.nearResistance).length;
+    if (crossSummary) {
+        crossSummary.innerHTML = `
+            <p class="cross-index-note">
+                Lines show each index's change from its first available 3m close, so crossovers are comparable despite different point scales. Spot prices stay in index points below. Nearest support/resistance uses published pivots, previous-day and 7-session levels, plus 15m/30m/1H/Daily moving averages; “near” means within ${CROSS_INDEX_LEVEL_THRESHOLD_PCT.toFixed(2)}%.
+                ${/closed/i.test(data.market_status || "")
+                    ? " Data is from the last captured session, not live."
+                    : ""}
+            </p>
+            <p class="cross-index-note">
+                Near a level now: ${nearSupportCount} index${nearSupportCount === 1 ? "" : "es"} at support · ${nearResistanceCount} at resistance.
+            </p>
+            <div class="cross-index-table-wrap">
+                <table class="cross-index-table">
+                    <thead>
+                        <tr>
+                            <th>Index / line</th>
+                            <th>Spot LTP</th>
+                            <th>From 3m start</th>
+                            <th>Nearest support</th>
+                            <th>Nearest resistance</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${rows.map(row => {
+                            const levelCell = (level, distance, near) => {
+                                if (!level) return "--";
+                                return `${escapeHtml(level.name)} ${formatNumber(level.price, 2)} · ${formatNumber(distance, 2)}%${near ? " · NEAR" : ""}`;
+                            };
+                            return `
+                                <tr>
+                                    <td>
+                                        <span class="cross-index-name">
+                                            <i class="cross-index-swatch" style="background:${row.color}"></i>
+                                            ${escapeHtml(row.displayName)}${row.hasCandles ? "" : " · no candles"}
+                                        </span>
+                                    </td>
+                                    <td>${formatNumber(row.spot, 2)}</td>
+                                    <td class="${row.sessionChange === null ? "" : row.sessionChange >= 0 ? "positive" : "negative"}">${formatPercent(row.sessionChange)}</td>
+                                    <td>${levelCell(row.levels.support, row.levels.supportDistance, row.nearSupport)}</td>
+                                    <td>${levelCell(row.levels.resistance, row.levels.resistanceDistance, row.nearResistance)}</td>
+                                </tr>
+                            `;
+                        }).join("")}
+                    </tbody>
+                </table>
+            </div>
+        `;
+    }
+
+    setText(
+        "candleCount",
+        `${lineData.length} of ${CROSS_INDEX_ORDER.length} index lines · 3m`
+    );
+
+    if (!lineData.length) {
+        if (priceContainer) {
+            priceContainer.innerHTML =
+                '<div class="chart-placeholder">No same-session 3m index candles are available for the cross-index comparison.</div>';
+        }
+        return;
+    }
+    if (!window.LightweightCharts) {
+        if (priceContainer) {
+            priceContainer.innerHTML =
+                '<div class="chart-placeholder">Chart library unavailable. Refresh the page or check your connection.</div>';
+        }
+        return;
+    }
+
+    const chart = addChart(priceContainer, { height: 360 });
+    if (!chart) return;
+    chart.applyOptions({
+        localization: {
+            priceFormatter: value => `${Number(value).toFixed(2)}%`
+        }
+    });
+
+    let referenceSeries = null;
+    for (const item of lineData) {
+        const series = chart.addLineSeries({
+            color: item.color,
+            lineWidth: 2,
+            title: item.name,
+            priceFormat: {
+                type: "custom",
+                minMove: 0.01,
+                formatter: value => `${Number(value).toFixed(2)}%`
+            },
+            priceLineVisible: false,
+            lastValueVisible: true
+        });
+        series.setData(item.points);
+        if (!referenceSeries) referenceSeries = series;
+    }
+    referenceSeries?.createPriceLine({
+        price: 0,
+        color: "rgba(148,163,184,0.65)",
+        lineWidth: 1,
+        lineStyle: 2,
+        axisLabelVisible: true,
+        title: "Session baseline"
+    });
+    chart.timeScale().fitContent();
+}
+
 function clearCharts() {
     state.charts.forEach(chart => {
         try {
@@ -1298,6 +1614,30 @@ function syncChartTimeScales() {
 function renderChart() {
     const data = state.data;
     if (!data) return;
+
+    if (state.selectedTimeframe === "CrossIndex") {
+        renderCrossIndexChart(data);
+        return;
+    }
+
+    const indexSelect = $("indexSelect");
+    const indexSelectLabel = $("indexSelectLabel");
+    const singleSummary = $("singleIndexSummary");
+    const chartLegend = $("chartLegend");
+    const crossSummary = $("crossIndexSummary");
+    const volumeHeading = $("volumeHeading");
+    const volumeChart = $("volumeChart");
+    const rsiHeading = $("rsiHeading");
+    const rsiChart = $("rsiChart");
+    if (indexSelect) indexSelect.hidden = false;
+    if (indexSelectLabel) indexSelectLabel.hidden = false;
+    if (singleSummary) singleSummary.hidden = false;
+    if (chartLegend) chartLegend.hidden = false;
+    if (crossSummary) crossSummary.hidden = true;
+    if (volumeHeading) volumeHeading.hidden = false;
+    if (volumeChart) volumeChart.hidden = false;
+    if (rsiHeading) rsiHeading.hidden = false;
+    if (rsiChart) rsiChart.hidden = false;
 
     const indexData = data.indices?.[state.selectedIndex];
 

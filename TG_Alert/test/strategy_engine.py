@@ -124,6 +124,8 @@ def _cross_index_level_bias(indices, per_index_levels):
         name for name, item in by_index.items()
         if item["resistance"] is not None
     ]
+    support_only_names = set(support_names) - set(resistance_names)
+    resistance_only_names = set(resistance_names) - set(support_names)
     bullish = (
         "Nifty 50" in support_names
         and "Bank Nifty" in support_names
@@ -135,7 +137,7 @@ def _cross_index_level_bias(indices, per_index_levels):
         and any(name in resistance_names for name in ("Nifty 100", "Nifty Midcap"))
     )
 
-    if support_names and resistance_names:
+    if support_only_names and resistance_only_names:
         direction = None
         reason = "Nearby support and resistance are split across the indices."
     elif bullish and bearish:

@@ -348,6 +348,17 @@ class StrategyRuleTests(unittest.TestCase):
         self.assertEqual(opportunity["decision"], "WAIT")
         self.assertIn("split", opportunity["reason"])
 
+    def test_dual_nearby_levels_do_not_hide_clear_support_confluence(self):
+        indices, levels, options = snapshot_setup()
+        for name in ("Nifty 50", "Nifty 100"):
+            levels[name].append({
+                "name": "Nearby resistance",
+                "price": 100.2,
+                "side": "resistance",
+            })
+        opportunity = _scalp_opportunity(indices, levels, options)
+        self.assertEqual(opportunity["decision"], "BUY ATM CE")
+
     def test_snapshot_scalp_prefers_ltp_to_the_last_candle_close(self):
         indices, levels, options = snapshot_setup()
         for item in indices.values():

@@ -783,6 +783,62 @@ a:hover {
     font-size: 11px;
 }
 
+.cross-index-signal {
+    margin-bottom: 12px;
+    padding: 12px 14px;
+    border: 1px solid var(--border);
+    border-left-width: 4px;
+    border-radius: 10px;
+    background: var(--bg-soft);
+}
+
+.cross-index-signal.is-ce {
+    border-left-color: var(--green);
+    background: var(--green-soft);
+}
+
+.cross-index-signal.is-pe {
+    border-left-color: var(--red);
+    background: var(--red-soft);
+}
+
+.cross-index-signal.is-wait {
+    border-left-color: var(--yellow);
+}
+
+.cross-index-signal-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.cross-index-signal-label {
+    color: var(--muted-light);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+}
+
+.cross-index-signal-heading strong {
+    color: var(--text);
+    font-size: 14px;
+    white-space: nowrap;
+}
+
+.cross-index-signal.is-ce .cross-index-signal-heading strong {
+    color: var(--green);
+}
+
+.cross-index-signal.is-pe .cross-index-signal-heading strong {
+    color: var(--red);
+}
+
+.cross-index-signal p {
+    margin: 5px 0 0;
+    color: var(--muted-light);
+}
+
 .cross-index-note {
     margin: 0 0 10px;
     color: var(--muted-light);

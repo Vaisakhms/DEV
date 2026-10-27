@@ -1198,21 +1198,19 @@ const CROSS_INDEX_ORDER = [
     "Nifty 50",
     "Bank Nifty",
     "Nifty 100",
-    "Nifty Midcap",
-    "Sensex"
+    "Nifty Midcap"
 ];
 
 const CROSS_INDEX_COLORS = {
     "Nifty 50": "#38bdf8",
     "Bank Nifty": "#f59e0b",
     "Nifty 100": "#a78bfa",
-    "Nifty Midcap": "#35d69a",
-    "Sensex": "#ff6b7d"
+    "Nifty Midcap": "#35d69a"
 };
 
 const CROSS_INDEX_LEVEL_THRESHOLD_PCT = 0.30;
 
-function crossIndexLevels(indexData, spot) {
+function crossIndexLevels(indexData, spot, sessionDate) {
     const levels = [];
     const addLevel = (name, value, side) => {
         const price = number(value);
@@ -1228,6 +1226,32 @@ function crossIndexLevels(indexData, spot) {
     addLevel("Previous-day high", supplied.previous_day_high, "resistance");
     addLevel("7-session low", indexData.seven_day?.lo, "support");
     addLevel("7-session high", indexData.seven_day?.hi, "resistance");
+
+    const dailyCandles = validCandles(indexData.charts?.Daily || []);
+    const currentSessionCandles = sessionDate
+        ? dailyCandles.filter(candle => marketDate(candle.time) === sessionDate)
+        : [];
+    const currentSession = currentSessionCandles.at(-1);
+    if (currentSession) {
+        addLevel("Session low", currentSession.low, "support");
+        addLevel("Session high", currentSession.high, "resistance");
+    }
+
+    const completedSessions = dailyCandles.filter(candle =>
+        !sessionDate || marketDate(candle.time) < sessionDate
+    ).slice(-5);
+    if (completedSessions.length) {
+        addLevel(
+            "5-session low",
+            Math.min(...completedSessions.map(candle => candle.low)),
+            "support"
+        );
+        addLevel(
+            "5-session high",
+            Math.max(...completedSessions.map(candle => candle.high)),
+            "resistance"
+        );
+    }
 
     for (const timeframe of ["15m", "30m", "1h", "Daily"]) {
         const sma = indexData.timeframes?.[timeframe]?.sma || {};
@@ -1279,6 +1303,55 @@ function crossIndexLevels(indexData, spot) {
     };
 }
 
+function crossIndexSignal(rows, isRecentOpenSnapshot) {
+    const rowByName = new Map(rows.map(row => [row.name, row]));
+    const nifty = rowByName.get("Nifty 50");
+    const bankNifty = rowByName.get("Bank Nifty");
+    const supportingIndices = [
+        rowByName.get("Nifty 100"),
+        rowByName.get("Nifty Midcap")
+    ].filter(Boolean);
+    const requiredRows = [nifty, bankNifty, ...supportingIndices];
+    const levelsAvailable = requiredRows.length === 4
+        && requiredRows.every(row =>
+            row.spot !== null
+            && (row.levels.support || row.levels.resistance)
+        );
+    const supportConfirmers = supportingIndices.filter(row => row.nearSupport);
+    const resistanceConfirmers = supportingIndices.filter(row => row.nearResistance);
+    const supportSetup = Boolean(
+        nifty?.nearSupport && bankNifty?.nearSupport && supportConfirmers.length
+    );
+    const resistanceSetup = Boolean(
+        nifty?.nearResistance && bankNifty?.nearResistance && resistanceConfirmers.length
+    );
+
+    let action = "WAIT";
+    let direction = "wait";
+    let explanation;
+    if (!isRecentOpenSnapshot) {
+        explanation = "A fresh market-hours snapshot is required; this data is stale or the market is closed.";
+    } else if (!levelsAvailable) {
+        explanation = "One or more required indices do not have usable spot and key-level data.";
+    } else if (supportSetup && resistanceSetup) {
+        explanation = "Support and resistance confluence conflict across the required indices.";
+    } else if (supportSetup) {
+        action = "ATM BUY CE";
+        direction = "ce";
+        const confirmingNames = supportConfirmers.map(row => row.displayName).join(" and ");
+        explanation = `Nifty 50 and Bank Nifty are near support; ${confirmingNames} confirms. Potential bounce setup only—confirm a bullish price-action turn before entry.`;
+    } else if (resistanceSetup) {
+        action = "ATM BUY PE";
+        direction = "pe";
+        const confirmingNames = resistanceConfirmers.map(row => row.displayName).join(" and ");
+        explanation = `Nifty 50 and Bank Nifty are near resistance; ${confirmingNames} confirms. Potential rejection setup only—confirm a bearish price-action turn before entry.`;
+    } else {
+        explanation = `No simultaneous Nifty 50 + Bank Nifty + Nifty 100/Midcap level confluence within ${CROSS_INDEX_LEVEL_THRESHOLD_PCT.toFixed(2)}%.`;
+    }
+
+    return { action, direction, explanation };
+}
+
 function marketDate(timestamp) {
     const parts = new Intl.DateTimeFormat("en-CA", {
         timeZone: "Asia/Kolkata",
@@ -1315,7 +1388,7 @@ function renderCrossIndexChart(data) {
         "chartInstrument",
         `CrossIndex · ${timeframeLabel} relative performance`
     );
-    setText("chartPrice", "5 indices");
+    setText("chartPrice", "4 indices");
     setText("chartChange", "% from first candle close");
 
     clearCharts();
@@ -1371,7 +1444,7 @@ function renderCrossIndexChart(data) {
             : points.length
                 ? points[points.length - 1].value
                 : null;
-        const levels = crossIndexLevels(item, spot);
+        const levels = crossIndexLevels(item, spot, sessionDate);
         const nearSupport = levels.supportDistance !== null
             && levels.supportDistance <= CROSS_INDEX_LEVEL_THRESHOLD_PCT;
         const nearResistance = levels.resistanceDistance !== null
@@ -1403,10 +1476,18 @@ function renderCrossIndexChart(data) {
 
     const nearSupportCount = rows.filter(row => row.nearSupport).length;
     const nearResistanceCount = rows.filter(row => row.nearResistance).length;
+    const signal = crossIndexSignal(rows, isRecentOpenSnapshot);
     if (crossSummary) {
         crossSummary.innerHTML = `
+            <section class="cross-index-signal is-${signal.direction}" aria-live="polite">
+                <div class="cross-index-signal-heading">
+                    <span class="cross-index-signal-label">NIFTY 50 ATM · CROSS-INDEX SCALP BIAS</span>
+                    <strong>${escapeHtml(signal.action)}</strong>
+                </div>
+                <p>${escapeHtml(signal.explanation)}</p>
+            </section>
             <p class="cross-index-note">
-                Lines show each index's change from its first ${escapeHtml(timeframeLabel)} candle close, so crossovers are comparable despite different point scales. Spot prices stay in index points below. Nearest support/resistance uses published pivots, previous-day and 7-session levels, plus 15m/30m/1H/Daily moving averages; “near” means within ${CROSS_INDEX_LEVEL_THRESHOLD_PCT.toFixed(2)}%.
+                Lines show each index's change from its first ${escapeHtml(timeframeLabel)} candle close, so crossovers are comparable despite different point scales. Spot prices stay in index points below. Key levels include session and previous-day highs/lows, 5- and 7-session ranges, pivots, and 15m/30m/1H/Daily moving averages. “Near” means within ${CROSS_INDEX_LEVEL_THRESHOLD_PCT.toFixed(2)}%.
                 ${/closed/i.test(data.market_status || "")
                     ? " Data is from the last captured session, not live."
                     : ""}

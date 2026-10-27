@@ -172,6 +172,12 @@ def _scalp_opportunity(now, nifty, options, lot_size, level_events=None):
     if support_bounce:
         direction = "CE"
         trigger_name = "Bullish support bounce"
+        if trigger == "Bearish":
+            return {
+                **wait,
+                "reason": "A confirmed 3m breakdown opposes the support bounce.",
+                "support_confirmations": support_indices,
+            }
         if trend_5m not in ("Bullish", "Mixed"):
             return {
                 **wait,

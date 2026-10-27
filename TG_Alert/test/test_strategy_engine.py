@@ -468,6 +468,27 @@ class StrategyRuleTests(unittest.TestCase):
         self.assertEqual(opportunity["decision"], "WAIT")
         self.assertIn("3m support bounce", opportunity["reason"])
 
+        candles = nifty["frames"]["3m"]["candles"]
+        candles[0] = {
+            "time": now.timestamp() - 240,
+            "open": 101.1,
+            "high": 101.5,
+            "low": 101.0,
+            "close": 101.2,
+            "sma20": 101.2,
+        }
+        candles[1]["close"] = 100.9
+        candles[1]["sma20"] = 101.2
+        opportunity = _scalp_opportunity(
+            now,
+            nifty,
+            options,
+            65,
+            events,
+        )
+        self.assertEqual(opportunity["decision"], "WAIT")
+        self.assertIn("breakdown", opportunity["reason"])
+
     def test_strategy_uses_multi_index_support_holds_for_expiry_day_scalp(self):
         now = datetime.datetime(2026, 10, 27, 10, 0, tzinfo=datetime.timezone(
             datetime.timedelta(hours=5, minutes=30)
@@ -482,7 +503,7 @@ class StrategyRuleTests(unittest.TestCase):
                     "3m": {
                         "candles": [
                             {"time": now.timestamp() - 240, "open": 101.0,
-                             "high": 101.0, "low": 100.8, "close": 100.9,
+                             "high": 101.0, "low": 100.5, "close": 100.9,
                              "sma20": 101.0},
                             {"time": now.timestamp() - 60, "open": 100.7,
                              "high": 100.8, "low": 100.4, "close": 100.6,

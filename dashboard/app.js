@@ -737,6 +737,7 @@ function renderCombinedDecision(data) {
         ? `${formatDashboardDateTime(snapshotDate)} IST · ${snapshotAgeLabel}`
         : "Timestamp unavailable";
     const bias = combinedMarketBias(data);
+    const crossIndexBias = crossIndexSignalFromSnapshot(data);
     const mainDecision = ["BUY ATM CE", "BUY ATM PE"].includes(strategy.decision)
         ? strategy.decision
         : "WAIT";
@@ -763,10 +764,21 @@ function renderCombinedDecision(data) {
         && (bias.direction === "Bullish" || bias.direction === "Bearish")
         && candidateDirection !== bias.direction
     );
-    const combinedDecision = marketClosed || conflictsWithBias
+    const strategyDecision = marketClosed || conflictsWithBias
         ? "WAIT"
         : candidate;
-    const isScalpOnly = mainDecision === "WAIT"
+    const crossIndexDecision = crossIndexBias.action === "ATM BUY CE"
+        ? "BUY ATM CE"
+        : crossIndexBias.action === "ATM BUY PE"
+            ? "BUY ATM PE"
+            : "WAIT";
+    const isCrossIndexOnly = strategyDecision === "WAIT"
+        && crossIndexDecision !== "WAIT";
+    const combinedDecision = isCrossIndexOnly
+        ? crossIndexDecision
+        : strategyDecision;
+    const isScalpOnly = !isCrossIndexOnly
+        && mainDecision === "WAIT"
         && scalpDecision.startsWith("BUY ATM")
         && combinedDecision !== "WAIT";
     const decisionClass = combinedDecision === "BUY ATM CE"
@@ -775,8 +787,14 @@ function renderCombinedDecision(data) {
         : "wait";
     const decisionText = combinedDecision === "WAIT"
         ? "WAIT"
-        : `${isScalpOnly ? "SCALP ONLY · " : ""}${combinedDecision}`;
-    const decisionReason = marketClosed
+        : `${isCrossIndexOnly
+            ? "CROSS-INDEX · "
+            : isScalpOnly
+                ? "SCALP ONLY · "
+                : ""}${combinedDecision}`;
+    const decisionReason = isCrossIndexOnly
+        ? `${crossIndexBias.explanation} Level-confluence bias from the last captured prices; confirm price action and option-chain conditions before entry.`
+        : marketClosed
         ? /closed/i.test(data.market_status || "")
             ? "Market is closed; stored signals are not live trade calls."
             : `Market data is ${snapshotAgeLabel}; live signals are disabled when data is over 10 minutes old.`
@@ -857,6 +875,11 @@ function renderCombinedDecision(data) {
                 <span class="eyebrow">SCALP OPPORTUNITY</span>
                 <strong class="${scalpDecision.endsWith("CE") ? "positive" : scalpDecision.endsWith("PE") ? "negative" : "neutral"}">${escapeHtml(scalpDecision)}</strong>
                 <small>${escapeHtml(/closed/i.test(data.market_status || "") ? "Market closed." : staleSnapshot ? "Latest snapshot is stale; no live signal." : scalp.reason || "Scalp data unavailable.")}</small>
+            </div>
+            <div class="combined-metric">
+                <span class="eyebrow">CROSS-INDEX LEVEL BIAS</span>
+                <strong class="${crossIndexBias.direction === "ce" ? "positive" : crossIndexBias.direction === "pe" ? "negative" : "neutral"}">${escapeHtml(crossIndexBias.action)}</strong>
+                <small>${escapeHtml(crossIndexBias.explanation)}</small>
             </div>
             <div class="combined-metric">
                 <span class="eyebrow">NIFTY TREND / BREADTH</span>
@@ -1303,7 +1326,7 @@ function crossIndexLevels(indexData, spot, sessionDate) {
     };
 }
 
-function crossIndexSignal(rows, isRecentOpenSnapshot) {
+function crossIndexSignal(rows) {
     const rowByName = new Map(rows.map(row => [row.name, row]));
     const nifty = rowByName.get("Nifty 50");
     const bankNifty = rowByName.get("Bank Nifty");
@@ -1329,9 +1352,7 @@ function crossIndexSignal(rows, isRecentOpenSnapshot) {
     let action = "WAIT";
     let direction = "wait";
     let explanation;
-    if (!isRecentOpenSnapshot) {
-        explanation = "A fresh market-hours snapshot is required; this data is stale or the market is closed.";
-    } else if (!levelsAvailable) {
+    if (!levelsAvailable) {
         explanation = "One or more required indices do not have usable spot and key-level data.";
     } else if (supportSetup && resistanceSetup) {
         explanation = "Support and resistance confluence conflict across the required indices.";
@@ -1339,17 +1360,41 @@ function crossIndexSignal(rows, isRecentOpenSnapshot) {
         action = "ATM BUY CE";
         direction = "ce";
         const confirmingNames = supportConfirmers.map(row => row.displayName).join(" and ");
-        explanation = `Nifty 50 and Bank Nifty are near support; ${confirmingNames} confirms. Potential bounce setup only—confirm a bullish price-action turn before entry.`;
+        explanation = `Nifty 50 and Bank Nifty are near support; ${confirmingNames} also confirm. Potential bounce setup only—confirm a bullish price-action turn before entry.`;
     } else if (resistanceSetup) {
         action = "ATM BUY PE";
         direction = "pe";
         const confirmingNames = resistanceConfirmers.map(row => row.displayName).join(" and ");
-        explanation = `Nifty 50 and Bank Nifty are near resistance; ${confirmingNames} confirms. Potential rejection setup only—confirm a bearish price-action turn before entry.`;
+        explanation = `Nifty 50 and Bank Nifty are near resistance; ${confirmingNames} also confirm. Potential rejection setup only—confirm a bearish price-action turn before entry.`;
     } else {
         explanation = `No simultaneous Nifty 50 + Bank Nifty + Nifty 100/Midcap level confluence within ${CROSS_INDEX_LEVEL_THRESHOLD_PCT.toFixed(2)}%.`;
     }
 
     return { action, direction, explanation };
+}
+
+function crossIndexSignalFromSnapshot(data) {
+    const generatedAt = Date.parse(data.generated_at || "");
+    const sessionDate = Number.isFinite(generatedAt)
+        ? marketDate(Math.floor(generatedAt / 1000))
+        : null;
+    const rows = CROSS_INDEX_ORDER.map(name => {
+        const item = data.indices?.[name] || {};
+        const spot = number(item.ltp, number(item.timeframes?.Daily?.ltp));
+        const levels = crossIndexLevels(item, spot, sessionDate);
+        return {
+            name,
+            displayName: name === "Nifty 100" ? "Nifty 100 (Large Cap)" : name,
+            spot,
+            levels,
+            nearSupport: levels.supportDistance !== null
+                && levels.supportDistance <= CROSS_INDEX_LEVEL_THRESHOLD_PCT,
+            nearResistance: levels.resistanceDistance !== null
+                && levels.resistanceDistance <= CROSS_INDEX_LEVEL_THRESHOLD_PCT
+        };
+    });
+
+    return crossIndexSignal(rows);
 }
 
 function marketDate(timestamp) {
@@ -1476,7 +1521,7 @@ function renderCrossIndexChart(data) {
 
     const nearSupportCount = rows.filter(row => row.nearSupport).length;
     const nearResistanceCount = rows.filter(row => row.nearResistance).length;
-    const signal = crossIndexSignal(rows, isRecentOpenSnapshot);
+    const signal = crossIndexSignal(rows);
     if (crossSummary) {
         crossSummary.innerHTML = `
             <section class="cross-index-signal is-${signal.direction}" aria-live="polite">

@@ -8,6 +8,7 @@ from strategy_engine import (
     _leg_bias,
     _level_veto,
     _oi_state,
+    _scalp_opportunity,
     _trend,
     _trigger,
     evaluate_strategy,
@@ -339,6 +340,208 @@ class StrategyRuleTests(unittest.TestCase):
         )
         self.assertEqual(decision["scalp_opportunity"]["decision"], "WAIT")
         self.assertIn("Expiry-day", decision["scalp_opportunity"]["reason"])
+
+    def test_expiry_day_support_bounce_needs_broad_support_confirmation(self):
+        now = datetime.datetime(2026, 10, 27, 10, 0, tzinfo=datetime.timezone(
+            datetime.timedelta(hours=5, minutes=30)
+        ))
+        frames = {
+            "3m": {
+                "candles": [
+                    {"time": now.timestamp() - 240, "open": 101.0,
+                     "high": 101.5, "low": 100.8, "close": 101.0,
+                     "sma20": 101.0},
+                    {"time": now.timestamp() - 60, "open": 100.7,
+                     "high": 101.1, "low": 100.4, "close": 100.9,
+                     "sma20": 101.2},
+                ]
+            },
+            "5m": {
+                "analysis": {"close": 100.9, "sma": {20: 101, 50: 100}},
+                "candles": [{"time": now.timestamp() - 60}],
+            },
+            "15m": {
+                "analysis": {"close": 100.9, "sma": {20: 101, 50: 100}},
+                "candles": [],
+            },
+        }
+        nifty = {"frames": frames}
+        options = {
+            "source": "Fyers",
+            "spot_live": True,
+            "captured_at": now.isoformat(),
+            "expiry_date": "2026-10-27",
+            "spot": 100.9,
+            "atm": 100,
+            "ce": {"ltp": 10},
+        }
+        support = {
+            "direction": "CE",
+            "kind": "support hold",
+            "level": {"price": 100.5},
+        }
+        broad_support = {
+            "Nifty 50": support,
+            "Bank Nifty": support,
+            "Nifty Midcap": support,
+        }
+
+        opportunity = _scalp_opportunity(
+            now,
+            nifty,
+            options,
+            65,
+            broad_support,
+        )
+
+        self.assertEqual(opportunity["decision"], "BUY ATM CE", opportunity)
+        self.assertEqual(
+            opportunity["support_confirmations"],
+            ["Nifty 50", "Bank Nifty", "Nifty Midcap"],
+        )
+
+        weak_support = {
+            "Nifty 50": support,
+            "Bank Nifty": support,
+        }
+        opportunity = _scalp_opportunity(
+            now,
+            nifty,
+            options,
+            65,
+            weak_support,
+        )
+        self.assertEqual(opportunity["decision"], "WAIT")
+        self.assertIn("3 of 4", opportunity["reason"])
+
+    def test_expiry_day_support_bounce_requires_reclaim_and_rejection(self):
+        now = datetime.datetime(2026, 10, 27, 10, 0, tzinfo=datetime.timezone(
+            datetime.timedelta(hours=5, minutes=30)
+        ))
+        nifty = {
+            "frames": {
+                "3m": {
+                    "candles": [
+                        {"time": now.timestamp() - 240, "high": 101.5},
+                        {"time": now.timestamp() - 60, "open": 100.7,
+                         "high": 101.1, "low": 100.4, "close": 100.4,
+                         "sma20": 101.2},
+                    ]
+                },
+                "5m": {
+                    "analysis": {"close": 100.9, "sma": {20: 101, 50: 100}},
+                    "candles": [{"time": now.timestamp() - 60}],
+                },
+                "15m": {
+                    "analysis": {"close": 100.9, "sma": {20: 101, 50: 100}},
+                },
+            }
+        }
+        options = {
+            "source": "Fyers",
+            "spot_live": True,
+            "captured_at": now.isoformat(),
+            "expiry_date": "2026-10-27",
+            "spot": 100.9,
+            "atm": 100,
+            "ce": {"ltp": 10},
+        }
+        support = {
+            "direction": "CE",
+            "kind": "support hold",
+            "level": {"price": 100.5},
+        }
+        events = {
+            "Nifty 50": support,
+            "Bank Nifty": support,
+            "Nifty Midcap": support,
+        }
+
+        opportunity = _scalp_opportunity(
+            now,
+            nifty,
+            options,
+            65,
+            events,
+        )
+
+        self.assertEqual(opportunity["decision"], "WAIT")
+        self.assertIn("3m support bounce", opportunity["reason"])
+
+    def test_strategy_uses_multi_index_support_holds_for_expiry_day_scalp(self):
+        now = datetime.datetime(2026, 10, 27, 10, 0, tzinfo=datetime.timezone(
+            datetime.timedelta(hours=5, minutes=30)
+        ))
+        indices = {}
+        for name in (
+            "Nifty 50", "Bank Nifty", "Nifty Midcap", "Nifty 100"
+        ):
+            indices[name] = {
+                "pivots": {"S1": 100.5},
+                "frames": {
+                    "3m": {
+                        "candles": [
+                            {"time": now.timestamp() - 240, "open": 101.0,
+                             "high": 101.0, "low": 100.8, "close": 100.9,
+                             "sma20": 101.0},
+                            {"time": now.timestamp() - 60, "open": 100.7,
+                             "high": 100.8, "low": 100.4, "close": 100.6,
+                             "sma20": 101.0},
+                        ]
+                    },
+                    "5m": {
+                        "analysis": {
+                            "close": 100.6,
+                            "sma": {20: 101, 50: 100},
+                        },
+                        "candles": [{"time": now.timestamp() - 60}],
+                    },
+                    "15m": {
+                        "analysis": {
+                            "close": 100.6,
+                            "sma": {20: 101, 50: 100},
+                        },
+                        "candles": [{
+                            "time": now.timestamp() - 60,
+                            "open": 100.7,
+                            "high": 100.8,
+                            "low": 100.3,
+                            "close": 100.6,
+                        }],
+                    },
+                },
+            }
+        options = {
+            "source": "Fyers",
+            "spot_live": True,
+            "captured_at": now.isoformat(),
+            "expiry_date": "2026-10-27",
+            "spot": 100.6,
+            "atm": 100,
+            "ce": {"ltp": 10},
+        }
+
+        decision, _ = evaluate_strategy(
+            now=now,
+            indices=indices,
+            pivots={"S1": 100.5},
+            options=options,
+            previous=None,
+            state={},
+            market_bias=0,
+            account_size=None,
+            lot_size=65,
+        )
+
+        self.assertEqual(
+            decision["scalp_opportunity"]["decision"],
+            "BUY ATM CE",
+            decision["scalp_opportunity"],
+        )
+        self.assertEqual(
+            len(decision["scalp_opportunity"]["support_confirmations"]),
+            4,
+        )
 
     def test_valid_aligned_setup_can_emit_atm_call_signal(self):
         now = datetime.datetime(2026, 10, 23, 10, 0, tzinfo=datetime.timezone(

@@ -67,17 +67,40 @@ def _trigger(frames):
     return "None"
 
 
-def _fresh_completed_candle(candles, now, interval_seconds, max_age_seconds):
+def _fresh_candle(candles, now, interval_seconds, max_age_seconds):
     if not candles:
         return False
     candle_start = _number(candles[-1].get("time"))
     if candle_start is None:
         return False
-    age = now.timestamp() - (candle_start + interval_seconds)
+    elapsed = now.timestamp() - candle_start
+    if 0 <= elapsed < interval_seconds:
+        return True
+    age = elapsed - interval_seconds
     return 0 <= age <= max_age_seconds
 
 
-def _scalp_opportunity(now, nifty, options, lot_size):
+def _confirmed_support_bounce(candles, level):
+    if not candles:
+        return False
+    candle = candles[-1]
+    close = _number(candle.get("close"))
+    high = _number(candle.get("high"))
+    low = _number(candle.get("low"))
+    open_price = _number(candle.get("open"))
+    support = _number(level)
+    if None in (close, high, low, open_price, support) or support <= 0:
+        return False
+    lower_wick = min(open_price, close) - low
+    upper_wick = high - max(open_price, close)
+    return (
+        close >= support
+        and low <= support * 1.0015
+        and (close >= open_price or lower_wick > upper_wick)
+    )
+
+
+def _scalp_opportunity(now, nifty, options, lot_size, level_events=None):
     local_now = now.astimezone(IST)
     wait = {"decision": "WAIT", "reason": "Scalp setup filters did not pass."}
 
@@ -94,8 +117,6 @@ def _scalp_opportunity(now, nifty, options, lot_size):
     expiry_date = options.get("expiry_date")
     if not expiry_date:
         return {**wait, "reason": "Option expiry is unavailable."}
-    if expiry_date == local_now.date().isoformat():
-        return {**wait, "reason": "Expiry-day scalp entries are disabled."}
 
     try:
         captured_at = datetime.datetime.fromisoformat(options["captured_at"])
@@ -111,22 +132,74 @@ def _scalp_opportunity(now, nifty, options, lot_size):
     candles_3m = (frames.get("3m") or {}).get("candles") or []
     candles_5m = (frames.get("5m") or {}).get("candles") or []
     if (
-        not _fresh_completed_candle(candles_3m, now, 180, 360)
-        or not _fresh_completed_candle(candles_5m, now, 300, 480)
+        not _fresh_candle(candles_3m, now, 180, 360)
+        or not _fresh_candle(candles_5m, now, 300, 480)
     ):
-        return {**wait, "reason": "Fresh completed 3m and 5m candles are required."}
+        return {**wait, "reason": "Fresh 3m and 5m candles are required."}
 
     trigger = _trigger(frames)
-    if trigger not in ("Bullish", "Bearish"):
-        return {**wait, "reason": "No confirmed 3m breakout trigger."}
-    direction = "CE" if trigger == "Bullish" else "PE"
-    expected_trend = "Bullish" if direction == "CE" else "Bearish"
     trend_5m = _trend((frames.get("5m") or {}).get("analysis"))
     trend_15m = _trend((frames.get("15m") or {}).get("analysis"))
-    if trend_5m != expected_trend:
-        return {**wait, "reason": "The 3m breakout is not aligned with the Nifty 5m trend."}
-    if trend_15m not in (expected_trend, "Mixed"):
-        return {**wait, "reason": "The Nifty 15m trend is unavailable or opposes the breakout."}
+    level_events = level_events or {}
+    support_indices = [
+        name for name, event in level_events.items()
+        if event
+        and event.get("direction") == "CE"
+        and event.get("kind") == "support hold"
+    ]
+    nifty_event = level_events.get("Nifty 50") or {}
+    nifty_support = nifty_event.get("level") or {}
+    support_bounce = (
+        "Nifty 50" in support_indices
+        and len(support_indices) >= 3
+        and _confirmed_support_bounce(
+            candles_3m,
+            nifty_support.get("price"),
+        )
+    )
+    expiry_day = expiry_date == local_now.date().isoformat()
+    if expiry_day and not support_bounce:
+        return {
+            **wait,
+            "reason": (
+                "Expiry-day breakouts are disabled; a confirmed Nifty 3m "
+                "support bounce and 15m support holds on at least 3 of 4 "
+                "indices are required."
+            ),
+            "support_confirmations": support_indices,
+        }
+
+    if support_bounce:
+        direction = "CE"
+        trigger_name = "Bullish support bounce"
+        if trend_5m not in ("Bullish", "Mixed"):
+            return {
+                **wait,
+                "reason": "The Nifty 5m trend opposes the confirmed support bounce.",
+                "support_confirmations": support_indices,
+            }
+        if trend_15m not in ("Bullish", "Mixed"):
+            return {
+                **wait,
+                "reason": "The Nifty 15m trend opposes the confirmed support bounce.",
+                "support_confirmations": support_indices,
+            }
+    else:
+        if trigger not in ("Bullish", "Bearish"):
+            return {**wait, "reason": "No confirmed 3m breakout trigger."}
+        direction = "CE" if trigger == "Bullish" else "PE"
+        expected_trend = "Bullish" if direction == "CE" else "Bearish"
+        trigger_name = trigger
+        if trend_5m != expected_trend:
+            return {
+                **wait,
+                "reason": "The 3m breakout is not aligned with the Nifty 5m trend.",
+            }
+        if trend_15m not in (expected_trend, "Mixed"):
+            return {
+                **wait,
+                "reason": "The Nifty 15m trend is unavailable or opposes the breakout.",
+            }
 
     spot = _number(options.get("spot"))
     atm = _number(options.get("atm"))
@@ -143,11 +216,17 @@ def _scalp_opportunity(now, nifty, options, lot_size):
     return {
         "decision": "BUY ATM " + direction,
         "direction": direction,
-        "reason": "Completed 3m breakout aligned with Nifty 5m trend; 15m trend is not opposing.",
-        "trigger_3m": trigger,
+        "reason": (
+            "Confirmed 3m support bounce with 15m support holds on at least "
+            "3 of 4 indices."
+            if support_bounce
+            else "3m breakout aligned with Nifty 5m trend; 15m trend is not opposing."
+        ),
+        "trigger_3m": trigger_name,
         "trend_5m": trend_5m,
         "trend_15m": trend_15m,
         "premium": premium,
+        "support_confirmations": support_indices if support_bounce else [],
     }
 
 
@@ -515,12 +594,6 @@ def evaluate_strategy(now, indices, pivots, options, previous, state,
         for name in INDEX_NAMES
     }
     trigger = _trigger(frames.get("Nifty 50") or {})
-    scalp_opportunity = _scalp_opportunity(
-        now,
-        indices.get("Nifty 50") or {},
-        options,
-        lot_size,
-    )
     consolidating = {
         name: _consolidating(frames[name], name == "Bank Nifty")
         for name in INDEX_NAMES
@@ -534,6 +607,13 @@ def evaluate_strategy(now, indices, pivots, options, previous, state,
         candles = (frames[name].get("15m") or {}).get("candles") or []
         percent = 0.2 if name == "Bank Nifty" else 0.15
         events[name] = _event(candles, per_index_levels[name], percent)
+    scalp_opportunity = _scalp_opportunity(
+        now,
+        indices.get("Nifty 50") or {},
+        options,
+        lot_size,
+        events,
+    )
 
     oi = _oi_state(options, previous, now)
     if oi is None:

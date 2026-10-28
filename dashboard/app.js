@@ -1933,9 +1933,14 @@ function renderChart() {
         }
     }
 
-    // Show the latest 60 candles initially; older candles remain accessible by zooming out.
+    // Initially show about five trading days of candles for intraday timeframes
+    // (NSE session = 375 minutes); older candles remain accessible by scrolling.
+    const timeframeMinutes = { "3m": 3, "5m": 5, "10m": 10, "15m": 15, "30m": 30, "1h": 60 };
+    const initialCandles = timeframeMinutes[timeframe]
+        ? Math.round((375 / timeframeMinutes[timeframe]) * 5)
+        : 60;
     const visibleRange = {
-        from: Math.max(0, candles.length - 60),
+        from: Math.max(0, candles.length - initialCandles),
         to: candles.length + 1
     };
 

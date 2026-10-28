@@ -1,19 +1,19 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-10-28T22:40:24.847406+05:30",
-  "generated_at_ist": "2026-10-28 22:40:24",
+  "generated_at": "2026-10-28T22:43:27.917580+05:30",
+  "generated_at_ist": "2026-10-28 22:43:27",
   "timezone": "Asia/Kolkata",
   "market_status": "CLOSED (data = last session)",
-  "ltp_captured_at": "2026-10-28T22:40:24.847406+05:30",
+  "ltp_captured_at": "2026-10-28T22:43:27.917580+05:30",
   "overall": {
-    "score": -3.4075431790107635,
+    "score": -3.4377719078914333,
     "label": "NEUTRAL / SIDEWAYS ⚖️",
     "coverage_pct": 100
   },
   "indices": {
     "Nifty 50": {
       "ltp": 22698.85,
-      "ltp_captured_at": "2026-10-28T22:40:24.847406+05:30",
+      "ltp_captured_at": "2026-10-28T22:43:27.917580+05:30",
       "timeframes": {
         "3m": {
           "close": 22698.85,
@@ -22447,7 +22447,7 @@
             "high": 22692.95,
             "low": 22600.45,
             "close": 22624.0,
-            "volume": 19971608.0,
+            "volume": 19970572.0,
             "sma20": 22697.405000000002,
             "sma50": 22599.58,
             "sma100": null,
@@ -22941,7 +22941,7 @@
             "high": 22323.8,
             "low": 22272.9,
             "close": 22293.3,
-            "volume": 10198477.0,
+            "volume": 10195629.0,
             "sma20": 22468.475,
             "sma50": 22588.734,
             "sma100": null,
@@ -22993,7 +22993,7 @@
             "high": 22291.1,
             "low": 22228.0,
             "close": 22250.85,
-            "volume": 12038176.0,
+            "volume": 12038087.0,
             "sma20": 22399.3775,
             "sma50": 22552.813000000002,
             "sma100": null,
@@ -23032,7 +23032,7 @@
             "high": 22244.85,
             "low": 22190.0,
             "close": 22214.85,
-            "volume": 13046318.0,
+            "volume": 13046329.0,
             "sma20": 22347.842500000002,
             "sma50": 22524.097999999998,
             "sma100": null,
@@ -23058,7 +23058,7 @@
             "high": 22236.6,
             "low": 22201.15,
             "close": 22203.25,
-            "volume": 17814745.0,
+            "volume": 17814809.0,
             "sma20": 22321.9925,
             "sma50": 22504.522,
             "sma100": null,
@@ -23110,7 +23110,7 @@
             "high": 22433.35,
             "low": 22362.5,
             "close": 22428.75,
-            "volume": 18493429.0,
+            "volume": 18493424.0,
             "sma20": 22293.4775,
             "sma50": 22474.859,
             "sma100": 22537.565499999997,
@@ -23266,7 +23266,7 @@
             "high": 22488.2,
             "low": 22460.2,
             "close": 22477.35,
-            "volume": 8114853.0,
+            "volume": 8114581.0,
             "sma20": 22397.422499999997,
             "sma50": 22430.99,
             "sma100": 22537.3835,
@@ -23695,7 +23695,7 @@
             "high": 22338.1,
             "low": 22312.45,
             "close": 22315.1,
-            "volume": 10276575.0,
+            "volume": 10249415.0,
             "sma20": 22393.2525,
             "sma50": 22442.0,
             "sma100": 22478.285,
@@ -23903,7 +23903,7 @@
             "high": 22540.3,
             "low": 22511.6,
             "close": 22537.8,
-            "volume": 8042889.0,
+            "volume": 8042890.0,
             "sma20": 22454.6575,
             "sma50": 22460.792999999998,
             "sma100": 22447.7895,
@@ -24085,7 +24085,7 @@
             "high": 22734.25,
             "low": 22667.05,
             "close": 22732.15,
-            "volume": 14890633.0,
+            "volume": 14890123.0,
             "sma20": 22584.0575,
             "sma50": 22484.481,
             "sma100": 22451.695499999998,
@@ -24202,7 +24202,7 @@
             "high": 22730.7,
             "low": 22697.4,
             "close": 22720.85,
-            "volume": 11468151.0,
+            "volume": 11468131.0,
             "sma20": 22669.95,
             "sma50": 22535.133,
             "sma100": 22477.8035,
@@ -24254,7 +24254,7 @@
             "high": 22719.75,
             "low": 22651.8,
             "close": 22669.0,
-            "volume": 9823511.0,
+            "volume": 9887373.0,
             "sma20": 22700.442499999997,
             "sma50": 22561.121,
             "sma100": 22493.7735,
@@ -24306,7 +24306,7 @@
             "high": 22667.6,
             "low": 22611.7,
             "close": 22657.2,
-            "volume": 10466127.0,
+            "volume": 10466144.0,
             "sma20": 22690.170000000002,
             "sma50": 22580.19,
             "sma100": 22507.985,
@@ -24722,7 +24722,7 @@
             "high": 23076.55,
             "low": 22942.15,
             "close": 22952.3,
-            "volume": 40973114.0,
+            "volume": 40972702.0,
             "sma20": 22984.925,
             "sma50": 22817.938000000002,
             "sma100": 22649.009499999996,
@@ -24748,7 +24748,7 @@
             "high": 23027.2,
             "low": 22940.9,
             "close": 23026.95,
-            "volume": 17177168.0,
+            "volume": 17175020.0,
             "sma20": 22991.5775,
             "sma50": 22829.154,
             "sma100": 22658.78,
@@ -24761,7 +24761,7 @@
             "high": 23094.7,
             "low": 23023.7,
             "close": 23094.3,
-            "volume": 18462171.0,
+            "volume": 18463383.0,
             "sma20": 22998.545000000002,
             "sma50": 22837.297000000002,
             "sma100": 22664.862999999998,
@@ -24800,7 +24800,7 @@
             "high": 23112.85,
             "low": 23077.2,
             "close": 23109.65,
-            "volume": 14823636.0,
+            "volume": 14823685.0,
             "sma20": 23020.8,
             "sma50": 22860.515,
             "sma100": 22684.850999999995,
@@ -24813,7 +24813,7 @@
             "high": 23123.45,
             "low": 23059.45,
             "close": 23089.1,
-            "volume": 14197507.0,
+            "volume": 14197505.0,
             "sma20": 23027.3875,
             "sma50": 22867.814,
             "sma100": 22691.842999999997,
@@ -24891,7 +24891,7 @@
             "high": 23140.8,
             "low": 23117.15,
             "close": 23122.9,
-            "volume": 9155903.0,
+            "volume": 9156153.0,
             "sma20": 23056.335,
             "sma50": 22917.068,
             "sma100": 22736.1975,
@@ -24904,7 +24904,7 @@
             "high": 23136.15,
             "low": 23096.15,
             "close": 23096.7,
-            "volume": 8101639.0,
+            "volume": 8085470.0,
             "sma20": 23059.685,
             "sma50": 22925.621999999996,
             "sma100": 22743.371500000005,
@@ -24930,7 +24930,7 @@
             "high": 23141.2,
             "low": 23113.15,
             "close": 23124.35,
-            "volume": 8362722.0,
+            "volume": 8362721.0,
             "sma20": 23072.265000000003,
             "sma50": 22947.315999999995,
             "sma100": 22758.432999999997,
@@ -24943,7 +24943,7 @@
             "high": 23141.55,
             "low": 23121.8,
             "close": 23129.25,
-            "volume": 8566973.0,
+            "volume": 8567789.0,
             "sma20": 23080.5675,
             "sma50": 22957.648999999998,
             "sma100": 22766.0615,
@@ -24995,7 +24995,7 @@
             "high": 23098.95,
             "low": 23075.9,
             "close": 23095.0,
-            "volume": 14394516.0,
+            "volume": 14394665.0,
             "sma20": 23108.3675,
             "sma50": 22995.599000000002,
             "sma100": 22796.658000000003,
@@ -25008,7 +25008,7 @@
             "high": 23112.25,
             "low": 23077.5,
             "close": 23080.6,
-            "volume": 21144708.0,
+            "volume": 21144748.0,
             "sma20": 23111.05,
             "sma50": 23005.086999999996,
             "sma100": 22804.1325,
@@ -25164,7 +25164,7 @@
             "high": 23062.75,
             "low": 22979.35,
             "close": 23003.95,
-            "volume": 9292105.0,
+            "volume": 9292155.0,
             "sma20": 23085.635000000002,
             "sma50": 23059.522999999997,
             "sma100": 22874.295499999997,
@@ -25229,7 +25229,7 @@
             "high": 22943.65,
             "low": 22906.0,
             "close": 22920.4,
-            "volume": 7557780.0,
+            "volume": 7557743.0,
             "sma20": 23041.5425,
             "sma50": 23055.846,
             "sma100": 22895.036999999997,
@@ -25268,7 +25268,7 @@
             "high": 22903.7,
             "low": 22859.25,
             "close": 22863.45,
-            "volume": 8816087.0,
+            "volume": 8816002.0,
             "sma20": 23010.845,
             "sma50": 23047.172000000002,
             "sma100": 22905.0845,
@@ -26230,7 +26230,7 @@
             "high": 22419.05,
             "low": 22387.45,
             "close": 22411.45,
-            "volume": 9085211.0,
+            "volume": 9085146.0,
             "sma20": 22516.144999999997,
             "sma50": 22612.936,
             "sma100": 22785.6885,
@@ -26347,7 +26347,7 @@
             "high": 22524.4,
             "low": 22387.35,
             "close": 22470.3,
-            "volume": 34247060.0,
+            "volume": 34245977.0,
             "sma20": 22476.775,
             "sma50": 22583.097,
             "sma100": 22734.5885,
@@ -26464,7 +26464,7 @@
             "high": 22588.85,
             "low": 22523.6,
             "close": 22562.2,
-            "volume": 9001345.0,
+            "volume": 9001312.0,
             "sma20": 22548.7475,
             "sma50": 22564.040999999997,
             "sma100": 22692.5675,
@@ -26958,7 +26958,7 @@
             "high": 22777.0,
             "low": 22712.25,
             "close": 22769.7,
-            "volume": 18074099.0,
+            "volume": 18074615.0,
             "sma20": 22739.5925,
             "sma50": 22676.403,
             "sma100": 22635.396,
@@ -31159,7 +31159,7 @@
             "high": 22742.05,
             "low": 22691.2,
             "close": 22706.65,
-            "volume": 15119661.0,
+            "volume": 15119622.0,
             "sma20": 22690.5875,
             "sma50": 22633.012000000002,
             "sma100": 22761.409,
@@ -37087,7 +37087,7 @@
     },
     "Bank Nifty": {
       "ltp": 54267.4,
-      "ltp_captured_at": "2026-10-28T22:40:24.847406+05:30",
+      "ltp_captured_at": "2026-10-28T22:43:27.917580+05:30",
       "timeframes": {
         "3m": {
           "close": 54267.4,
@@ -74161,7 +74161,7 @@
     },
     "Nifty 100": {
       "ltp": 23644.1,
-      "ltp_captured_at": "2026-10-28T22:40:24.847406+05:30",
+      "ltp_captured_at": "2026-10-28T22:43:27.917580+05:30",
       "timeframes": {
         "3m": {
           "close": 23644.1,
@@ -111209,7 +111209,7 @@
     },
     "Nifty Midcap": {
       "ltp": 16500.65,
-      "ltp_captured_at": "2026-10-28T22:40:24.847406+05:30",
+      "ltp_captured_at": "2026-10-28T22:43:27.917580+05:30",
       "timeframes": {
         "3m": {
           "close": 16500.65,
@@ -148257,7 +148257,7 @@
     },
     "Sensex": {
       "ltp": 73246.03,
-      "ltp_captured_at": "2026-10-28T22:40:24.847406+05:30",
+      "ltp_captured_at": "2026-10-28T22:43:27.917580+05:30",
       "timeframes": {
         "3m": {
           "close": 73246.03,
@@ -150093,7 +150093,7 @@
             "high": 74682.19,
             "low": 74607.63,
             "close": 74623.33,
-            "volume": 1175583.0,
+            "volume": 1175584.0,
             "sma20": 74104.0315,
             "sma50": 73920.1338,
             "sma100": 74033.9961,
@@ -157646,7 +157646,7 @@
             "high": 73397.98,
             "low": 73371.14,
             "close": 73383.98,
-            "volume": 33207.0,
+            "volume": 33187.0,
             "sma20": 73488.0405,
             "sma50": 73523.2336,
             "sma100": 73514.8089,
@@ -160781,7 +160781,7 @@
             "high": 74682.19,
             "low": 74607.63,
             "close": 74657.31,
-            "volume": 1283664.0,
+            "volume": 1283665.0,
             "sma20": 73979.161,
             "sma50": 73958.8948,
             "sma100": null,
@@ -165318,7 +165318,7 @@
             "high": 73406.26,
             "low": 73371.14,
             "close": 73397.47,
-            "volume": 56303.0,
+            "volume": 56283.0,
             "sma20": 73512.685,
             "sma50": 73530.678,
             "sma100": 73411.6354,
@@ -167101,7 +167101,7 @@
             "high": 74682.19,
             "low": 74597.34,
             "close": 74598.32,
-            "volume": 1468968.0,
+            "volume": 1468969.0,
             "sma20": 73943.7635,
             "sma50": null,
             "sma100": null,
@@ -169389,7 +169389,7 @@
             "high": 73418.13,
             "low": 73347.43,
             "close": 73397.47,
-            "volume": 105069.0,
+            "volume": 105049.0,
             "sma20": 73530.04500000001,
             "sma50": 73422.3162,
             "sma100": 73155.015,
@@ -176413,7 +176413,7 @@
             "high": 72450.34,
             "low": 72187.62,
             "close": 72370.09,
-            "volume": 5319494.0,
+            "volume": 5319491.0,
             "sma20": 72604.96900000001,
             "sma50": 72877.28459999998,
             "sma100": null,
@@ -176829,7 +176829,7 @@
             "high": 72971.58,
             "low": 72767.52,
             "close": 72952.27,
-            "volume": 573737.0,
+            "volume": 573748.0,
             "sma20": 72407.061,
             "sma50": 72397.8422,
             "sma100": null,
@@ -178441,7 +178441,7 @@
             "high": 74682.19,
             "low": 74149.89,
             "close": 74598.32,
-            "volume": 4147808.0,
+            "volume": 4147809.0,
             "sma20": 74290.343,
             "sma50": 73967.5438,
             "sma100": 73112.3157,
@@ -179221,7 +179221,7 @@
             "high": 73418.13,
             "low": 73312.15,
             "close": 73397.47,
-            "volume": 330919.0,
+            "volume": 330899.0,
             "sma20": 73393.6955,
             "sma50": 73237.993,
             "sma100": 73683.6275,
@@ -179743,7 +179743,7 @@
             "high": 76875.04,
             "low": 76620.92,
             "close": 76628.0,
-            "volume": 1307054.0,
+            "volume": 1307055.0,
             "sma20": 76733.79250000001,
             "sma50": null,
             "sma100": null,
@@ -180133,7 +180133,7 @@
             "high": 75153.86,
             "low": 74967.24,
             "close": 75089.29,
-            "volume": 3170172.0,
+            "volume": 3170173.0,
             "sma20": 75841.47099999999,
             "sma50": 76353.5138,
             "sma100": null,
@@ -180211,7 +180211,7 @@
             "high": 74910.96,
             "low": 74666.1,
             "close": 74687.84,
-            "volume": 3478061.0,
+            "volume": 3478081.0,
             "sma20": 75438.41,
             "sma50": 76110.0368,
             "sma100": null,
@@ -181485,7 +181485,7 @@
             "high": 72572.9,
             "low": 72187.62,
             "close": 72451.02,
-            "volume": 8674815.0,
+            "volume": 8674818.0,
             "sma20": 72632.688,
             "sma50": 73580.808,
             "sma100": 74073.96179999999,
@@ -181706,7 +181706,7 @@
             "high": 72971.58,
             "low": 72767.52,
             "close": 72908.23,
-            "volume": 1584844.0,
+            "volume": 1584833.0,
             "sma20": 72286.893,
             "sma50": 72766.28080000001,
             "sma100": 73657.4712,
@@ -182577,7 +182577,7 @@
             "high": 74682.19,
             "low": 74080.96,
             "close": 74142.76,
-            "volume": 5237113.0,
+            "volume": 5237112.0,
             "sma20": 74281.2935,
             "sma50": 73247.0684,
             "sma100": 72823.7672,
@@ -182993,7 +182993,7 @@
             "high": 73420.2,
             "low": 73247.46,
             "close": 73253.11,
-            "volume": 837331.0,
+            "volume": 837351.0,
             "sma20": 73196.31249999999,
             "sma50": 73660.28020000001,
             "sma100": 73113.2956,
@@ -185326,7 +185326,7 @@
   },
   "options": {
     "source": "Fyers",
-    "captured_at": "2026-10-28T22:40:30.087265+05:30",
+    "captured_at": "2026-10-28T22:43:33.043633+05:30",
     "expiry": "03-11-2026",
     "spot": 22698.85,
     "atm": 22700.0,
@@ -185571,7 +185571,7 @@
       "score": 0,
       "setup_direction": "CE"
     },
-    "timestamp_ist": "2026-10-28T22:40:30.566776+05:30",
+    "timestamp_ist": "2026-10-28T22:43:33.453046+05:30",
     "ce_points": 0.0,
     "pe_points": 1.5,
     "net_score": -1.5,
@@ -185726,22 +185726,22 @@
       "name": "Dow Jones",
       "ticker": "^DJI",
       "category": "equity",
-      "price": 52513.62109375,
-      "change_pct": 0.25975008088057194
+      "price": 52511.328125,
+      "change_pct": 0.2553723124267826
     },
     {
       "name": "S&P 500",
       "ticker": "^GSPC",
       "category": "equity",
-      "price": 7738.06982421875,
-      "change_pct": 0.2003175920917588
+      "price": 7737.97998046875,
+      "change_pct": 0.1991542047757644
     },
     {
       "name": "Nasdaq",
       "ticker": "^IXIC",
       "category": "equity",
-      "price": 26482.15234375,
-      "change_pct": 0.016397869707973634
+      "price": 26481.802734375,
+      "change_pct": 0.015077483438186157
     },
     {
       "name": "Nikkei 225",
@@ -185782,22 +185782,22 @@
       "name": "Dollar Index",
       "ticker": "DX-Y.NYB",
       "category": "risk",
-      "price": 102.23999786376953,
-      "change_pct": -0.07818787264787241
+      "price": 102.23899841308594,
+      "change_pct": -0.07916466182552595
     },
     {
       "name": "USD/INR",
       "ticker": "INR=X",
       "category": "risk",
-      "price": 95.22000122070312,
-      "change_pct": 0.03467360245583695
+      "price": 95.20999908447266,
+      "change_pct": 0.024165721545155172
     },
     {
       "name": "US 10Y Yield",
       "ticker": "^TNX",
       "category": "risk",
-      "price": 5.015999794006348,
-      "change_pct": 0.46064016319233847
+      "price": 5.019999980926514,
+      "change_pct": 0.5407560633669206
     },
     {
       "name": "India VIX",
@@ -185818,7 +185818,7 @@
         "tags": [
           "RBI"
         ],
-        "age": 0.8693863488888889
+        "age": 0.9202824344444445
       },
       {
         "title": "Ivu vor  YES Bk’ AT-1 o rqu RBI o ur o of SC ju - TrVw",
@@ -185828,7 +185828,17 @@
         "tags": [
           "RBI"
         ],
-        "age": 1.2874419044444443
+        "age": 1.33833799
+      },
+      {
+        "title": "‘Cu  x r o’ f rur’ R D o wr  LTCG cu c r FII ck - Mocoro.co",
+        "source": "Mocoro.co",
+        "url": "https://news.google.com/rss/articles/CBMi9wFBVV95cUxQWk1fcGVGVVQ1b2JGalpja0ZhMkxXYWhuRTUybXpJMExnaEZEdm1rcEtrdnVmUU5hU3ZpTnNfWHMtaThrNzc4WjV1ZDZOQmRCb193NTZpZU01RFBDSVFGVjNTT2ZweHA2b0RHYjlfb3RGT2hXLThRb2RJU1gxbmswVkxKTVZBeElEbWVkX1NpS0ptMGhsczNCbU9SQkpxVVBoSko5R3I1ZG9yaE9BdmFNNHVyWnVMQVcxM2tOck5PTnc2cDlHRVVEZHVaODNKdlFVSXJVb2E0OVJLOHFad0JLNy13ZkMzc3pIQ2hjeHpWdzRKSzRLYkhZ0gH3AUFVX3lxTFBaTV9wZUZVVDVvYkZqWmNrRmEyTFdhaG5FNTJtekkwTGdoRkR2bWtwS2t2dWZRTmFTdmlOc19Ycy1pOGs3NzhaNXVkNk5CZEJvX3c1NmllTTVEUENJUUZWM1NPZnB4cDZvREdiOV9vdEZPaFctOFFvZElTWDFuazBWTEpNVkF4SURtZWRfU2lLSm0waGxzM0JtT1JCSnFVUGhKSjlHcjVkb3JoT0F2YU00dXJadUxBVzEza05yTk9OdzZwOUdFVURkdVo4M0p2UVVJclVvYTQ5Uks4cVp3Qks3LXdmQzNzekhDaGN4elZ3NEpLNEtiSFk?oc=5",
+        "score": 0,
+        "tags": [
+          "FII"
+        ],
+        "age": 3.6138935455555554
       },
       {
         "title": "S o rvw for vor ru W cou c for FPI  I rk? - Bu To",
@@ -185838,7 +185848,17 @@
         "tags": [
           "FPI"
         ],
-        "age": 3.637441904444444
+        "age": 3.68833799
+      },
+      {
+        "title": "S o rvw FPI coc or, u couo r o  w o r - f.cooc..co",
+        "source": "f.cooc..co",
+        "url": "https://news.google.com/rss/articles/CBMi5wFBVV95cUxQRWIybk13aVBOdnd3LWtjYXMxS1ZhbUFnaExyQmhvWjRjcFdVN2tzWGM1YmJpajRNanNTLUprU3lDRTRZRWNhbDh3bEZ2MGxCclAxUGVveWdhRThHbGJYd3FybldVZUE4dlFCcmM3VU1rdVdjUFFaMVlNZy04N2FzVzU0Q3J1aXd3OEVDQW9nSnZYRHN2OThyVlFEQkt1TlFCUmtzWnljQUpGSmZfMndTQk1JNmZUQ1RZYzVJRHFhc0hqRUJLUnFWYlpWSUlDMnV1ZFlNVndFUEotOUtNOUFiMjgzQm1WQnfSAewBQVVfeXFMT0RYZ2dNeHBKUkNzNGVlb2N1aFc2elEyeGRkTmVIeFVMcGFvU3cxckg3Z2g3S1N0cUd1LWx6bTd6cl9VZlJFNHBwa0d2dkpzT3Y5bmx0dWdyaFFnRk82WUw0MG1NVDM1alk1akJjQTJpa3pKREhySHB5Q0QtRF9PRUwyTHBYM1phdGEwWHdkdFlLb2pyNW93emFWNVdYd0QzSDVBM1Flc0NWWFg0X05xN0NoWm9IelY4VWo1Q1ZfQjJnQzVRY052c3NBUjdEaWxodG1xZzJtUGFfWmNtdDlzNU5tTVRwOUU0RVF2M0U?oc=5",
+        "score": 0,
+        "tags": [
+          "FPI"
+        ],
+        "age": 6.820282434444445
       },
       {
         "title": "T FII -off  Mcro rur ovrru x cv - ET Govr",
@@ -185848,7 +185868,7 @@
         "tags": [
           "FII"
         ],
-        "age": 9.887441904444444
+        "age": 9.93833799
       },
       {
         "title": "Sx f r 700 o  r cru rc, FPI oufow w o rk - DD I",
@@ -185858,28 +185878,12 @@
         "tags": [
           "FPI"
         ],
-        "age": 12.396053015555555
-      },
-      {
-        "title": "Oc 28 Sx F 353 P  Cru To 115; Nf S Bow 22,700 - T I Awz",
-        "source": "T I Awz",
-        "url": "https://news.google.com/rss/articles/CBMingFBVV95cUxNeEFBek41QjNWUHVxa3FYb3ZsR1J0ekNPYkdBaC13cng4aGZlNExRMXh2TGxQTHJpQXh1MFQxN1diMVFWQXY3TlZtSEpieHBLT2NfSkxxUHBnT0dYYVp6enZBbVVBVDNTVHhtbF9aTkFzUENFUmY5YjRUbGF5ejRRRWNsSjBvRWlzNGloaUxobm9XeHRYN2k1Y0RGeEZ6UQ?oc=5",
-        "score": 0,
-        "tags": [],
-        "age": 0.22438634888888886
-      },
-      {
-        "title": "I' r  PE v f 31%  for vor u ck - Bu Sr",
-        "source": "Bu Sr",
-        "url": "https://news.google.com/rss/articles/CBMi3wFBVV95cUxQRWhfYVRuRnhOV19YNmxaRmw5aWhZN2xnamJTZDU3c2FxZGFyVS1qOFBJQmxldmRxdEZXNlRndmpHdzQ5bWgtQ2YzR0J0czA5Vlg2RmpKcHNjS3R4S0d2bUx2XzFzVnV6ZjRrdVR4Zy16bVN4ZVFhSWQyblhQRGV0RllVZ1RjTzNtSTlyZy1kS2FHelQ3Wm5YT203MlNXYkNnMTJxR2hEWE16ZlFqOVp1T0hwUjZnUU9TUW5mM1dZeEZwOUZUWkstSGpiT1RWRXNCTnQydXlXbkY3azVPdkdj0gHkAUFVX3lxTE5xZUpqR0lUSmxaRE5fQUx1cGNOU2xaY2xaRTZpNjU4NkUxcFpBY0JBZkg3RklzamhzZUdqeWEzTGpQUUxjbTEwREZmbDFRMDFmR1hnNmFNc2N5dTJscE02WEVyVWhpVUUwTFc4NVhlV0EyU3dZYnlZcThDTEhVZGx1VXhDVjczSFBLbHlxNEFXZnpXX2lQbXhHck40a0ctckJzSjk1S0JKT2FuVWVzeVVfUHM4SlZTZ2t6OFJTOWhVTzFNLWNDYWRjRVpCaUNvRW5PZE96VnFkQkk3OFlQclJ3WDNPaQ?oc=5",
-        "score": 0,
-        "tags": [],
-        "age": 0.3849419044444445
+        "age": 12.44694910111111
       }
     ]
   },
   "scores": {
-    "global_markets": 0.2839230002732403,
+    "global_markets": 0.2809001273851733,
     "news_sentiment": 0.0,
     "components": [
       {
@@ -185933,8 +185937,8 @@
       {
         "name": "Global markets",
         "weight": 10,
-        "score": 0.2839230002732403,
-        "contribution": 2.839230002732403
+        "score": 0.2809001273851733,
+        "contribution": 2.8090012738517327
       },
       {
         "name": "News sentiment",

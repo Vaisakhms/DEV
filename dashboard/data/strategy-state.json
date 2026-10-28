@@ -5,9 +5,9 @@
   "realized_pnl": 0.0,
   "open_position": null,
   "last_stop_at": null,
-  "updated_at": "2026-10-28T22:55:29.213537+05:30",
+  "updated_at": "2026-10-28T22:58:27.935346+05:30",
   "option_snapshot": {
-    "timestamp": "2026-10-28T22:55:29.102290+05:30",
+    "timestamp": "2026-10-28T22:58:27.483773+05:30",
     "expiry": "03-11-2026",
     "chain": {
       "20200.0": {

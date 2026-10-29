@@ -605,17 +605,23 @@ function renderBreakdown(data) {
         return;
     }
 
+    const totalWeight = components.reduce(
+        (sum, item) => sum + Math.max(0, number(item.weight, 0)),
+        0
+    );
+
     container.innerHTML = components.map(item => {
         const contribution = number(item.contribution, 0);
         const score = number(item.score, 0);
         const weight = number(item.weight, 0);
+        const share = totalWeight > 0 ? weight / totalWeight * 100 : 0;
 
         return `
             <div class="breakdown-row">
                 <div class="breakdown-factor">
                     <strong>${escapeHtml(item.name || "Analysis factor")}</strong>
                     <span class="muted small-text">
-                        Weight ${weight.toFixed(0)}% · Score ${formatSigned(score)}
+                        Share ${share.toFixed(0)}% · Score ${formatSigned(score)}
                     </span>
                 </div>
                 <div class="breakdown-contribution ${contribution >= 0 ? "positive" : "negative"}">
@@ -626,13 +632,151 @@ function renderBreakdown(data) {
     }).join("");
 }
 
+function newsAgeText(value) {
+    const age = number(value);
+    if (age === null) return "";
+    if (age < 1) return `${Math.max(1, Math.round(age * 60))} min ago`;
+    return age < 24
+        ? `${age.toFixed(1)} hours ago`
+        : `${(age / 24).toFixed(1)} days ago`;
+}
+
+function newsDirection(item) {
+    const direction = number(item.score, 0);
+    return direction > 0
+        ? { cls: "bullish", text: "Bullish" }
+        : direction < 0
+            ? { cls: "bearish", text: "Bearish" }
+            : { cls: "neutral", text: "Neutral" };
+}
+
+function renderGapNewsItem(item) {
+    const direction = newsDirection(item);
+    const url = safeHttpUrl(item.url);
+    const title = escapeHtml(item.title || "Untitled news item");
+
+    return `
+        <div class="gap-news-item">
+            <span class="impact-badge ${direction.cls}">
+                ${number(item.impact, 0).toFixed(1)}
+            </span>
+            <div>
+                <div class="gap-news-title">
+                    ${url
+                        ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${title}</a>`
+                        : title}
+                </div>
+                <div class="muted small-text">
+                    ${direction.text} · ${escapeHtml(item.source || "News")}
+                    · ${escapeHtml(newsAgeText(item.age))}
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function renderGapOutlook(data) {
+    const section = $("gapOutlook");
+    if (!section) return;
+
+    const gap = data.gap_outlook;
+    if (!gap || typeof gap !== "object") {
+        section.hidden = true;
+        return;
+    }
+
+    section.hidden = false;
+    setText("gapTitle", String(gap.title || "Gap outlook").toUpperCase());
+    setText("gapLabel", gap.label || "Unavailable");
+
+    const score = number(gap.score);
+    setText("gapScore", score === null ? "--" : formatSigned(score * 100));
+
+    const labelNode = $("gapLabel");
+    if (labelNode) {
+        labelNode.className = `gap-label ${
+            gap.direction === "up" ? "positive"
+                : gap.direction === "down" ? "negative" : ""}`;
+    }
+
+    setText(
+        "gapWeight",
+        `Counts ${number(gap.overall_weight, 0).toFixed(0)} pts in overall score`
+    );
+
+    const alertNode = $("gapAlert");
+    if (alertNode) {
+        const move = gap.potential_move;
+        const watch = (Array.isArray(gap.alerts) ? gap.alerts : [])
+            .filter(item => item.level === "watch");
+
+        if (move) {
+            alertNode.hidden = false;
+            alertNode.className = `gap-alert critical ${move.direction}`;
+            alertNode.textContent = `🚨 ${move.text}`;
+        } else if (watch.length) {
+            alertNode.hidden = false;
+            alertNode.className = "gap-alert watch";
+            alertNode.textContent =
+                `⚠️ Watch: ${watch.slice(0, 2).map(item => item.text).join("; ")}`;
+        } else {
+            alertNode.hidden = true;
+        }
+    }
+
+    const indicated = gap.indicated_gap;
+    const opening = gap.opening_gap;
+    setText(
+        "gapGap",
+        indicated
+            ? `GIFT Nifty ${formatNumber(indicated.gift_price)} vs Nifty close ${formatNumber(indicated.nifty_ref)}: ${formatSigned(indicated.points)} pts (${formatSigned(indicated.pct)}%)`
+            : opening
+                ? `Today's opening gap: ${formatSigned(opening.pct)}% (open ${formatNumber(opening.open)} vs previous close ${formatNumber(opening.prev_close)})`
+                : "Indicated gap unavailable."
+    );
+
+    setHtml(
+        "gapSignals",
+        (Array.isArray(gap.signals) ? gap.signals : []).map(signal => {
+            const value = number(signal.score);
+            const cls = !signal.available || value === null
+                ? "neutral"
+                : value > 0.1 ? "bullish" : value < -0.1 ? "bearish" : "neutral";
+
+            return `
+                <div class="gap-signal ${cls}" title="${escapeHtml(signal.detail || "")}">
+                    <span class="muted small-text">${escapeHtml(signal.name)} (${number(signal.weight, 0).toFixed(0)}%)</span>
+                    <strong>${escapeHtml(signal.value || "n/a")}</strong>
+                </div>
+            `;
+        }).join("")
+    );
+
+    const top = Array.isArray(gap.top_news) ? gap.top_news : [];
+    setHtml(
+        "gapNews",
+        top.length
+            ? top.slice(0, 5).map(renderGapNewsItem).join("")
+            : '<div class="loading-card">No market-moving news in the last 24 hours.</div>'
+    );
+
+    setText(
+        "gapNote",
+        `Signal coverage ${number(gap.coverage_pct, 0).toFixed(0)}%. ` +
+        "Keyword-based news scoring and scraped GIFT Nifty price are rough guides, not advice."
+    );
+}
+
 function renderNews(data) {
     const news = data.news || {};
     const items = Array.isArray(news.items) ? news.items : [];
+    const stats = news.stats || {};
 
     setText(
         "newsSummary",
-        `News sentiment score: ${formatSigned(news.score)} | ${items.length} news items`
+        `News sentiment score: ${formatSigned(news.score)} (counts as 10 pts in overall)` +
+        ` | ${items.length} news items` +
+        (stats.relevant ? ` | ${stats.positive || 0} bullish, ${stats.negative || 0} bearish` : "")
     );
 
     const container = $("newsCards");
@@ -645,13 +789,8 @@ function renderNews(data) {
     }
 
     container.innerHTML = items.slice(0, 12).map(item => {
-        const age = number(item.age);
-
-        const ageText = age === null
-            ? ""
-            : age < 24
-                ? `${age.toFixed(1)} hours ago`
-                : `${(age / 24).toFixed(1)} days ago`;
+        const ageText = newsAgeText(item.age);
+        const direction = newsDirection(item);
 
         const tags = (Array.isArray(item.tags) ? item.tags : [])
             .map(tag => `<span class="news-tag">${escapeHtml(tag)}</span>`)
@@ -666,7 +805,10 @@ function renderNews(data) {
                     <span>${escapeHtml(ageText)}</span>
                 </div>
                 <h3>${escapeHtml(item.title || "Untitled news item")}</h3>
-                <div class="news-tags">${tags}</div>
+                <div class="news-tags">
+                    <span class="news-tag ${direction.cls}">${direction.text} · impact ${number(item.impact, 0).toFixed(1)}</span>
+                    ${tags}
+                </div>
                 ${url
                     ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">Read story ↗</a>`
                     : ""}
@@ -2078,6 +2220,7 @@ function renderDashboard(data) {
 
     state.data = data;
 
+    renderGapOutlook(data);
     renderOverall(data);
     renderIndexCards(data);
     renderTechnicalCards(data);

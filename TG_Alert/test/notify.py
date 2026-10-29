@@ -35,6 +35,15 @@ import yfinance as yf
 
 from fyers_apiv3 import fyersModel
 
+from gap_outlook import (
+    build_gap_outlook,
+    fetch_fii_dii,
+    fetch_gift_nifty,
+    fetch_news_digest,
+    fetch_nifty_snapshot,
+    overall_weight,
+    render_gap_outlook_lines,
+)
 from strategy_engine import evaluate_strategy
 
 
@@ -120,7 +129,7 @@ def b64(value):
 
 
 def safe_md(text):
-    return re.sub(r"[*_`$begin:math:display$$end:math:display$]", "", str(text or ""))
+    return re.sub(r"[*_`\[\]]", "", str(text or ""))
 
 
 def lakh(n):
@@ -1513,147 +1522,14 @@ def global_analysis():
 # NEWS
 # ============================================================
 
-NEWS_QUERIES = [
-    'Nifty OR Sensex OR "Indian stock market"',
-    'RBI OR "Federal Reserve" OR inflation OR "interest rate"',
-    '"crude oil" OR war OR tariff OR sanctions stocks',
-    'FII OR FPI OR "foreign investors" India',
-]
-
-POS_WORDS = [
-    "rally", "rallies", "surge", "surges", "gain", "gains",
-    "jumps", "soars", "record high", "rate cut", "cools",
-    "eases", "inflow", "inflows", "upgrade", "beats",
-    "rebound", "rebounds", "recovers", "optimism",
-    "ceasefire", "bullish",
-]
-
-NEG_WORDS = [
-    "fall", "falls", "plunge", "plunges", "crash", "slump",
-    "slumps", "selloff", "sell-off", "drops", "slides",
-    "tumbles", "rate hike", "outflow", "outflows", "selling",
-    "downgrade", "fears", "recession", "war", "tariff",
-    "tariffs", "sanctions", "attack", "misses", "losses",
-    "warning", "bearish",
-]
-
-CONCERN_WORDS = [
-    "RBI", "Fed", "Federal Reserve", "war", "tariff",
-    "tariffs", "sanctions", "ceasefire", "election", "budget",
-    "GDP", "CPI", "inflation", "crude", "OPEC", "FII",
-    "FPI", "default", "rate cut", "rate hike",
-]
-
-
-def _count(words, text):
-    return sum(
-        1
-        for word in words
-        if re.search(r"\b" + re.escape(word) + r"\b", text)
-    )
-
-
 def fetch_news():
-    items = []
-    seen = set()
+    digest = fetch_news_digest()
 
-    now_utc = datetime.datetime.now(datetime.timezone.utc)
+    for item in digest["items"]:
+        item["title"] = safe_md(item["title"])
+        item["source"] = safe_md(item["source"])
 
-    for query in NEWS_QUERIES:
-        url = (
-            "https://news.google.com/rss/search?q=%s"
-            "&hl=en-IN&gl=IN&ceid=IN:en"
-            % quote_plus(query + " when:1d")
-        )
-
-        try:
-            response = requests.get(
-                url,
-                timeout=15,
-                headers={"User-Agent": "Mozilla/5.0"},
-            )
-
-            response.raise_for_status()
-
-            root = ET.fromstring(response.content)
-
-        except Exception as exc:
-            print("News error:", exc)
-            continue
-
-        for item in list(root.iter("item"))[:8]:
-            title = safe_md(item.findtext("title"))
-            key = title.lower()[:60]
-
-            if not title or key in seen:
-                continue
-
-            seen.add(key)
-
-            try:
-                published = email.utils.parsedate_to_datetime(
-                    item.findtext("pubDate")
-                )
-
-                if published.tzinfo is None:
-                    published = published.replace(
-                        tzinfo=datetime.timezone.utc
-                    )
-
-                age_hours = (
-                    now_utc - published.astimezone(datetime.timezone.utc)
-                ).total_seconds() / 3600
-
-            except Exception:
-                age_hours = 24
-
-            if age_hours > 30:
-                continue
-
-            low = title.lower()
-
-            sentiment = (
-                _count(POS_WORDS, low)
-                - _count(NEG_WORDS, low)
-            )
-
-            tags = [
-                word
-                for word in CONCERN_WORDS
-                if re.search(r"\b" + re.escape(word) + r"\b", title, re.I)
-            ]
-
-            link = item.findtext("link") or ""
-
-            items.append({
-                "title": title,
-                "source": safe_md(item.findtext("source") or ""),
-                "url": link,
-                "score": (sentiment > 0) - (sentiment < 0),
-                "tags": tags[:2],
-                "age": max(0, age_hours),
-            })
-
-    scored = [
-        item["score"]
-        for item in items
-        if item["score"] != 0
-    ]
-
-    score = (
-        clamp(1.5 * sum(scored) / len(scored))
-        if scored
-        else 0.0
-    )
-
-    items.sort(
-        key=lambda item: (
-            not (item["score"] or item["tags"]),
-            item["age"],
-        )
-    )
-
-    return items[:7], score if items else None
+    return digest, digest["score"]
 
 
 def render_news(items):
@@ -1662,7 +1538,7 @@ def render_news(items):
 
     output = []
 
-    for item in items:
+    for item in items[:7]:
         icon = (
             "🟢" if item["score"] > 0
             else "🔴" if item["score"] < 0
@@ -1676,17 +1552,18 @@ def render_news(items):
         )
 
         output.append(
-            "  %s %s%s _(%s)_"
+            "  %s %s%s _(%s, impact %.0f/10)_"
             % (
                 icon,
                 item["title"][:110],
                 tag,
                 item["source"],
+                item["impact"],
             )
         )
 
     output.append(
-        "  _Headline bias = keyword-based, treat as a rough guide_"
+        "  _Headline impact/bias = keyword-based, treat as a rough guide_"
     )
 
     return output
@@ -1715,6 +1592,8 @@ def build_dashboard_payload(
     live_quotes=None,
     ltp_captured_at=None,
     index_levels=None,
+    gap_outlook=None,
+    news_stats=None,
 ):
     index_data = {}
     index_levels = index_levels or {}
@@ -1753,7 +1632,9 @@ def build_dashboard_payload(
         "news": {
             "score": news_score,
             "items": news_items,
+            "stats": (news_stats or {}),
         },
+        "gap_outlook": gap_outlook,
         "scores": {
             "global_markets": global_score,
             "news_sentiment": news_score,
@@ -2138,7 +2019,34 @@ def main():
 
     global_lines, global_score, global_records = global_analysis()
 
-    news_items, news_score = fetch_news()
+    news_digest, news_score = fetch_news()
+    news_items = news_digest["items"]
+
+    futures_moves = {}
+    for futures_name, futures_ticker in (
+        ("S&P 500 Futures", "ES=F"),
+        ("Nasdaq Futures", "NQ=F"),
+    ):
+        futures_pct = yf_change(futures_ticker)[1]
+        if futures_pct is not None:
+            futures_moves[futures_name] = futures_pct
+
+    market_open = status == "OPEN"
+    nifty_snapshot = fetch_nifty_snapshot()
+    gap_outlook = build_gap_outlook(
+        now=now,
+        market_open=market_open,
+        nifty_last=(
+            live_quotes.get("Nifty 50")
+            or (nifty_snapshot or {}).get("last")
+        ),
+        gift=fetch_gift_nifty(),
+        us_futures=futures_moves,
+        global_records=global_records,
+        fii_dii=fetch_fii_dii(),
+        news=news_digest,
+        snapshot=nifty_snapshot,
+    )
 
     options = (
         fetch_fyers_options(spot_hint)
@@ -2189,7 +2097,14 @@ def main():
         ),
         ("Global markets", 10, global_score),
         ("News sentiment", 10, news_score),
+        (
+            "Gap outlook",
+            overall_weight(gap_outlook["alert_level"]),
+            gap_outlook["score"],
+        ),
     ]
+
+    total_weight = sum(weight for _, weight, _ in components)
 
     available = [
         (name, weight, score)
@@ -2201,6 +2116,8 @@ def main():
         weight
         for _, weight, _ in available
     )
+
+    coverage_pct = weight_sum / total_weight * 100 if total_weight else 0.0
 
     total = (
         sum(weight * score for _, weight, score in available)
@@ -2259,8 +2176,10 @@ def main():
 
     lines.append(
         "_Signal coverage: %.0f%% of weight available_"
-        % weight_sum
+        % coverage_pct
     )
+
+    lines.extend(render_gap_outlook_lines(gap_outlook))
 
     if _fyers_error:
         lines.append(
@@ -2400,12 +2319,14 @@ def main():
         global_score=global_score,
         components=components,
         total=total,
-        weight_sum=weight_sum,
+        weight_sum=coverage_pct,
         status=status,
         strategy=strategy,
         live_quotes=live_quotes,
         ltp_captured_at=ltp_captured_at,
         index_levels=index_levels,
+        gap_outlook=gap_outlook,
+        news_stats=news_digest["stats"],
     )
 
     save_dashboard_snapshot(payload)

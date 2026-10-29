@@ -1,6 +1,8 @@
 import datetime
 import unittest
+from unittest import mock
 
+import gap_outlook
 from gap_outlook import (
     IST,
     build_gap_outlook,
@@ -12,6 +14,8 @@ from gap_outlook import (
     parse_nifty_snapshot,
     parse_rss,
     render_gap_outlook_lines,
+    verified_publish_time,
+    verify_google_stories,
 )
 
 NOW_UTC = datetime.datetime(2026, 10, 29, 16, 0, tzinfo=datetime.timezone.utc)
@@ -53,6 +57,48 @@ def records(**changes):
         {"name": names[key], "change_pct": value}
         for key, value in changes.items()
     ]
+
+
+class ArticleDateTests(unittest.TestCase):
+    PAGE = (
+        '<meta property="article:published_time" content="2026-03-23T10:59:01+05:30">'
+        '<script type="application/ld+json">{"datePublished":"2026-03-23T10:59:01+05:30",'
+        '"dateModified":"2026-03-23T11:01:22+05:30"}</script>'
+    )
+
+    def test_declared_date_is_extracted(self):
+        parsed = verified_publish_time(self.PAGE)
+        self.assertEqual(parsed.date().isoformat(), "2026-03-23")
+
+    def test_earliest_date_wins_over_restamped_modified_date(self):
+        page = (
+            '{"datePublished":"2026-03-23T10:59:01+05:30",'
+            '"dateModified":"2026-10-29T20:00:00+05:30"}'
+        )
+        self.assertEqual(verified_publish_time(page).month, 3)
+
+    def test_page_without_date_is_unverifiable(self):
+        self.assertIsNone(verified_publish_time("<html>no dates</html>"))
+        self.assertIsNone(verified_publish_time(None))
+
+    def test_stale_story_is_dropped_and_undated_story_is_dropped(self):
+        fresh = datetime.datetime(2026, 10, 29, 20, 0, tzinfo=IST)
+        stale = datetime.datetime(2026, 3, 23, 11, 0, tzinfo=IST)
+        dates = {"fresh": fresh, "stale": stale, "undated": None}
+
+        def fake_verify(item):
+            when = dates[item["title"].split()[0].lower()]
+            return None if when is None else {**item, "published": when}
+
+        stories = [
+            story("fresh Sensex surges on RBI cut"),
+            story("stale Sensex crash war panic"),
+            story("undated Nifty rally on FII inflows"),
+        ]
+        with mock.patch.object(gap_outlook, "verify_story_date", fake_verify):
+            kept = verify_google_stories(stories, NOW_UTC)
+
+        self.assertEqual([s["title"].split()[0] for s in kept], ["fresh"])
 
 
 class ClassifyNewsTests(unittest.TestCase):

@@ -7,6 +7,7 @@ Network fetchers are small, fail-soft and return None / [] on any problem.
 import datetime
 import email.utils
 import html
+import json
 import re
 import xml.etree.ElementTree as ET
 from urllib.parse import quote_plus
@@ -263,6 +264,151 @@ def classify_news(title, summary=""):
     }
 
 
+def parse_article_dates(page_html):
+    """Return the publish/update datetimes a publisher declares in its page."""
+    found = []
+    text = page_html or ""
+    patterns = (
+        r'"(?:datePublished|dateModified)"\s*:\s*"([^"]{8,40})"',
+        r'<meta[^>]+(?:property|name|itemprop)=["\']'
+        r'(?:article:published_time|article:modified_time|og:updated_time|'
+        r'datePublished|dateModified)["\'][^>]*content=["\']([^"\']{8,40})',
+        r'<meta[^>]+content=["\']([^"\']{8,40})["\'][^>]+'
+        r'(?:property|name|itemprop)=["\']'
+        r'(?:article:published_time|article:modified_time|og:updated_time|'
+        r'datePublished|dateModified)["\']',
+        r'<time[^>]+datetime=["\']([^"\']{8,40})',
+    )
+
+    for pattern in patterns:
+        for match in re.finditer(pattern, text, re.I):
+            raw = match.group(1).strip()
+            try:
+                parsed = datetime.datetime.fromisoformat(
+                    raw.replace("Z", "+00:00")
+                )
+            except ValueError:
+                continue
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=IST)
+            found.append(parsed)
+
+    return found
+
+
+def verified_publish_time(page_html):
+    """Earliest declared date: a story re-stamped today but written
+    months ago must be treated as old. None when the page has no date."""
+    dates = parse_article_dates(page_html)
+    if not dates:
+        return None
+    return min(dates)
+
+
+_GN_ID_RX = re.compile(r"/(?:rss/)?articles/([^/?]+)")
+
+
+def resolve_google_news_url(url, session=None):
+    """Resolve a news.google.com article link to the publisher URL."""
+    http = session or requests
+    match = _GN_ID_RX.search(url or "")
+    if not match:
+        return None
+    article_id = match.group(1)
+
+    try:
+        page = http.get(
+            "https://news.google.com/rss/articles/%s" % article_id,
+            headers=HEADERS,
+            timeout=10,
+        ).text
+        signature = re.search(r'data-n-a-sg="([^"]+)"', page)
+        timestamp = re.search(r'data-n-a-ts="([^"]+)"', page)
+        if not signature or not timestamp:
+            return None
+
+        inner = (
+            '["garturlreq",[["X","X",["X","X"],null,null,1,1,"US:en",null,1,'
+            'null,null,null,null,null,0,1],"X","X",1,[1,1,1],1,1,null,0,0,'
+            'null,0],"%s",%s,"%s"]'
+            % (article_id, timestamp.group(1), signature.group(1))
+        )
+        body = "f.req=" + requests.utils.quote(
+            json.dumps([[["Fbv4je", inner, None, "generic"]]])
+        )
+        response = http.post(
+            "https://news.google.com/_/DotsSplashUi/data/batchexecute",
+            data=body,
+            headers={
+                **HEADERS,
+                "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+            },
+            timeout=10,
+        )
+        chunk = response.text.split("\n\n", 1)[1]
+        payload = json.loads(json.loads(chunk)[0][2])
+        decoded = payload[1]
+        return decoded if decoded.startswith("http") else None
+    except Exception:
+        return None
+
+
+def verify_story_date(story):
+    """Return the story with its publisher-declared date, or None if the
+    real date cannot be confirmed."""
+    try:
+        publisher_url = resolve_google_news_url(story["url"])
+        if not publisher_url:
+            return None
+        response = requests.get(publisher_url, headers=HEADERS, timeout=10)
+        if response.status_code != 200:
+            return None
+        declared = verified_publish_time(response.text)
+    except Exception:
+        return None
+
+    if declared is None:
+        return None
+
+    return {**story, "published": declared, "url": publisher_url}
+
+
+def verify_google_stories(stories, now_utc, max_checks=40):
+    """Keep only Google News stories whose publisher page confirms they are
+    inside the news window. Unverifiable stories are dropped."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    candidates = []
+    for story in stories:
+        age = (
+            now_utc - story["published"].astimezone(datetime.timezone.utc)
+        ).total_seconds() / 3600
+        if age < -0.5 or age > NEWS_WINDOW_HOURS:
+            continue
+        if classify_news(story["title"], story["summary"])["impact"] < MIN_RELEVANT_IMPACT:
+            continue
+        candidates.append(story)
+
+    candidates = candidates[:max_checks]
+    if not candidates:
+        return []
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        checked = list(pool.map(verify_story_date, candidates))
+
+    kept = []
+    for story in checked:
+        if story is None:
+            continue
+        age = (
+            now_utc - story["published"].astimezone(datetime.timezone.utc)
+        ).total_seconds() / 3600
+        if -0.5 <= age <= NEWS_WINDOW_HOURS:
+            kept.append(story)
+
+    return kept
+
+
 def recency_factor(age_hours):
     if age_hours <= 6:
         return 1.0
@@ -402,6 +548,8 @@ def fetch_news_digest(now_utc=None):
         except Exception as exc:
             print("News feed error (%s): %s" % (feed["name"], exc))
 
+    google_stories = []
+
     for query in GOOGLE_NEWS_QUERIES:
         url = (
             "https://news.google.com/rss/search?q=%s&hl=en-IN&gl=IN&ceid=IN:en"
@@ -412,9 +560,18 @@ def fetch_news_digest(now_utc=None):
             response.raise_for_status()
             parsed = parse_rss(response.content, "")
             loaded = loaded or bool(parsed)
-            stories.extend(parsed[:15])
+            google_stories.extend(parsed[:15])
         except Exception as exc:
             print("News error:", exc)
+
+    # Google's pubDate can be a re-crawl time, so confirm each story's real
+    # date on the publisher's page. Unverifiable stories are not used.
+    verified = verify_google_stories(google_stories, now_utc)
+    print(
+        "News date check: %d Google stories verified of %d fetched"
+        % (len(verified), len(google_stories))
+    )
+    stories.extend(verified)
 
     digest = build_news_digest(stories, now_utc)
 

@@ -40,12 +40,13 @@ GIFT_NIFTY_URL = "https://in.tradingview.com/symbols/NSEIX-NIFTY1!/"
 
 # Gap signal weights (percent of the outlook score).
 SIGNAL_WEIGHTS = {
-    "gift": 30,
-    "us_futures": 20,
+    "gift": 27,
+    "us_futures": 18,
     "asia": 10,
     "vix": 5,
     "flows": 10,
     "risk": 10,
+    "metals": 5,
     "news": 15,
 }
 
@@ -727,7 +728,7 @@ def _avg(values):
     return sum(values) / len(values) if values else None
 
 
-def _signal(key, name, score, value, detail=""):
+def _signal(key, name, score, value, detail="", note=""):
     return {
         "key": key,
         "name": name,
@@ -735,8 +736,47 @@ def _signal(key, name, score, value, detail=""):
         "score": score,
         "value": value,
         "detail": detail,
+        "note": note,
         "available": score is not None,
     }
+
+
+def interpret_flows(fii, dii):
+    """Plain-language bias from one day's FII and DII net flows (Rs Cr)."""
+    net = fii + dii
+    if abs(fii) < 500 and abs(dii) < 500:
+        return "Neutral", "Muted institutional flows: no clear bias."
+
+    if fii > 0 and dii > 0:
+        return "Bullish", (
+            "FIIs and DIIs both bought (net %+.0f Cr): broad institutional "
+            "support." % net
+        )
+    if fii < 0 and dii < 0:
+        return "Bearish", (
+            "FIIs and DIIs both sold (net %+.0f Cr): broad institutional "
+            "selling." % net
+        )
+    if fii < 0 < dii:
+        if dii >= abs(fii):
+            return "Neutral to mildly positive", (
+                "FIIs sold but DIIs bought more (net %+.0f Cr): domestic "
+                "buying is cushioning the market, though foreign selling "
+                "caps the upside." % net
+            )
+        return "Mildly bearish", (
+            "FIIs sold more than DIIs bought (net %+.0f Cr): domestic "
+            "buying is not enough to offset foreign selling." % net
+        )
+    if fii >= abs(dii):
+        return "Bullish", (
+            "FIIs bought while DIIs booked profits (net %+.0f Cr): "
+            "foreign-led buying." % net
+        )
+    return "Mixed", (
+        "FIIs bought but DIIs sold more (net %+.0f Cr): domestic "
+        "profit-booking outweighs foreign buying." % net
+    )
 
 
 def _gap_label(score, live):
@@ -888,11 +928,13 @@ def build_gap_outlook(
     if fii_dii and fii_dii.get("fii_net") is not None:
         fii = fii_dii["fii_net"]
         dii = fii_dii.get("dii_net") or 0.0
+        flow_bias, flow_text = interpret_flows(fii, dii)
         signals.append(_signal(
             "flows", "FII / DII net flows",
             clamp((fii + 0.5 * dii) / 3000.0),
             "FII %+.0f Cr, DII %+.0f Cr" % (fii, dii),
             "NSE provisional, %s" % (fii_dii.get("date") or "latest"),
+            "%s: %s" % (flow_bias, flow_text),
         ))
         if abs(fii) >= 3000:
             alert(
@@ -952,6 +994,28 @@ def build_gap_outlook(
             "Rupee moved sharply (USD/INR %+.2f%%)" % inr[0],
             "bearish" if inr[0] > 0 else "bullish",
         )
+
+    metals = {
+        name: _record_change(global_records, (name,))
+        for name in ("Gold", "Silver")
+    }
+    metal_values = [v[0] for v in metals.values() if v]
+    metal_avg = _avg(metal_values)
+    if metal_avg is not None:
+        signals.append(_signal(
+            "metals", "Gold & silver",
+            -clamp(metal_avg / 3.0),
+            " / ".join(
+                "%s %+.2f%%" % (k, v[0]) for k, v in metals.items() if v
+            ),
+            "Rising metals signal risk-off demand (mildly bearish); "
+            "falling metals ease risk-off.",
+            "Risk-off demand" if metal_avg > 0.5
+            else "Risk-on / easing safe-haven demand" if metal_avg < -0.5
+            else "Flat: no safe-haven signal",
+        ))
+    else:
+        signals.append(_signal("metals", "Gold & silver", None, "n/a"))
 
     news_score = (news or {}).get("score")
     top = (news or {}).get("top", [])
@@ -1097,6 +1161,8 @@ def render_gap_outlook_lines(outlook):
     for sig in outlook["signals"]:
         if sig["available"]:
             lines.append("  • %s: %s" % (_md(sig["name"]), _md(sig["value"])))
+            if sig.get("note"):
+                lines.append("    _%s_" % _md(sig["note"]))
 
     move = outlook.get("potential_move")
     if move:

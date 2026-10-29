@@ -115,6 +115,12 @@ RISK_TICKERS = [
     ("India VIX", "^INDIAVIX"),
 ]
 
+# Shown and used by the gap outlook only; not part of the global score.
+METAL_TICKERS = [
+    ("Gold", "GC=F"),
+    ("Silver", "SI=F"),
+]
+
 
 # ============================================================
 # GENERAL HELPERS
@@ -1493,6 +1499,27 @@ def global_analysis():
         else:
             risks.append(percentage)
 
+            lines.append(
+                "  • %s: %s (%+.2f%%)"
+                % (name, format(price, ",.2f"), percentage)
+            )
+
+    lines.append("*Metals* (safe-haven demand, not in the global score)")
+
+    for name, ticker in METAL_TICKERS:
+        price, percentage = yf_change(ticker)
+
+        records.append({
+            "name": name,
+            "ticker": ticker,
+            "category": "metal",
+            "price": price,
+            "change_pct": percentage,
+        })
+
+        if percentage is None:
+            lines.append("  • %s: unavailable" % name)
+        else:
             lines.append(
                 "  • %s: %s (%+.2f%%)"
                 % (name, format(price, ",.2f"), percentage)

@@ -1523,6 +1523,12 @@ a:hover {
 .gap-signal.bearish { border-left-color: var(--red); }
 .gap-signal.neutral { border-left-color: var(--muted); }
 
+.gap-signal-note {
+    color: var(--muted);
+    font-size: 11px;
+    line-height: 1.5;
+}
+
 .gap-subhead {
     margin: 14px 0 8px;
     font-size: 13px;

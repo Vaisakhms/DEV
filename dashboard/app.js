@@ -569,7 +569,9 @@ function renderGlobalMarkets(data) {
         const change = number(market.change_pct, 0);
         const category = market.category === "risk"
             ? "Risk indicator"
-            : "Equity index";
+            : market.category === "metal"
+                ? "Precious metal"
+                : "Equity index";
 
         return `
             <article class="panel global-card">
@@ -747,6 +749,9 @@ function renderGapOutlook(data) {
                 <div class="gap-signal ${cls}" title="${escapeHtml(signal.detail || "")}">
                     <span class="muted small-text">${escapeHtml(signal.name)} (${number(signal.weight, 0).toFixed(0)}%)</span>
                     <strong>${escapeHtml(signal.value || "n/a")}</strong>
+                    ${signal.note
+                        ? `<span class="gap-signal-note">${escapeHtml(signal.note)}</span>`
+                        : ""}
                 </div>
             `;
         }).join("")

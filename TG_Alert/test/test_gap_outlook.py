@@ -8,6 +8,7 @@ from gap_outlook import (
     build_gap_outlook,
     build_news_digest,
     classify_news,
+    interpret_flows,
     overall_weight,
     parse_fii_dii,
     parse_gift_nifty,
@@ -50,6 +51,7 @@ def story(title, hours_old=2, summary=""):
 def records(**changes):
     names = {
         "nikkei": "Nikkei 225", "hsi": "Hang Seng", "vix": "India VIX",
+        "gold": "Gold", "silver": "Silver",
         "brent": "Brent Crude", "inr": "USD/INR", "tnx": "US 10Y Yield",
         "dxy": "Dollar Index",
     }
@@ -229,6 +231,50 @@ class ParserTests(unittest.TestCase):
         self.assertEqual(stories[0]["title"], "ECB holds rates")
         self.assertEqual(stories[0]["summary"], "Energy shock")
         self.assertEqual(parse_rss(b"not xml"), [])
+
+
+class FlowsAndMetalsTests(unittest.TestCase):
+    def signal(self, outlook, key):
+        return [s for s in outlook["signals"] if s["key"] == key][0]
+
+    def outlook(self, **kwargs):
+        return build_gap_outlook(now=NOW, market_open=False, **kwargs)
+
+    def test_signal_weights_sum_to_100(self):
+        self.assertEqual(sum(gap_outlook.SIGNAL_WEIGHTS.values()), 100)
+
+    def test_fii_sell_dii_buy_is_cushioned_not_bearish(self):
+        bias, text = interpret_flows(-944, 1924)
+        self.assertEqual(bias, "Neutral to mildly positive")
+        self.assertIn("cushioning", text)
+
+    def test_other_flow_combinations(self):
+        self.assertEqual(interpret_flows(1500, 900)[0], "Bullish")
+        self.assertEqual(interpret_flows(-1500, -900)[0], "Bearish")
+        self.assertEqual(interpret_flows(-2500, 800)[0], "Mildly bearish")
+        self.assertEqual(interpret_flows(1800, -600)[0], "Bullish")
+        self.assertEqual(interpret_flows(600, -2000)[0], "Mixed")
+        self.assertEqual(interpret_flows(100, -200)[0], "Neutral")
+
+    def test_flow_signal_carries_the_interpretation(self):
+        result = self.outlook(fii_dii={"fii_net": -944.0, "dii_net": 1924.0})
+        note = self.signal(result, "flows")["note"]
+        self.assertTrue(note.startswith("Neutral to mildly positive"))
+
+    def test_rising_gold_and_silver_is_mildly_bearish(self):
+        result = self.outlook(global_records=records(gold=1.5, silver=3.0))
+        signal = self.signal(result, "metals")
+        self.assertLess(signal["score"], 0)
+        self.assertIn("Gold +1.50%", signal["value"])
+        self.assertEqual(signal["note"], "Risk-off demand")
+
+    def test_falling_metals_is_mildly_bullish(self):
+        result = self.outlook(global_records=records(gold=-1.5, silver=-2.0))
+        self.assertGreater(self.signal(result, "metals")["score"], 0)
+
+    def test_metals_missing_is_unavailable(self):
+        result = self.outlook(global_records=records(nikkei=0.5))
+        self.assertFalse(self.signal(result, "metals")["available"])
 
 
 class GapOutlookTests(unittest.TestCase):

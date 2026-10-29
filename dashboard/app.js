@@ -503,50 +503,165 @@ function renderOptions(data) {
     const container = $("optionsCards");
     if (!container) return;
 
+    const ladderRows = Array.isArray(options.ladder) ? options.ladder : [];
+    renderOptionsLadder(options, ladderRows);
+
+    if (ladderRows.length) {
+        container.hidden = true;
+        return;
+    }
+
+    container.hidden = false;
+
     const contracts = [
         { name: "ATM Call (CE)", data: options.ce || {}, type: "call" },
         { name: "ATM Put (PE)", data: options.pe || {}, type: "put" }
     ];
 
-    container.innerHTML = contracts.map(contract => {
-        const item = contract.data;
-        const change = number(item.ltpch, 0);
-        const sentiment = optionOiSentiment(item.buildup, contract.type);
+    container.innerHTML = contracts.map(contract =>
+        optionCardHtml(contract.name, contract.data, contract.type)
+    ).join("");
+}
+
+function momentumLine(leg, key, label) {
+    const move = leg && leg[key];
+    if (!move) return "";
+
+    const price = move.ltp;
+    const oi = move.oi;
+    const priceText = price
+        ? `${formatSigned(price.abs)}${price.pct === null ? "" : ` (${formatSigned(price.pct, 1)}%)`}`
+        : "--";
+    const oiText = oi
+        ? `${formatCompact(oi.abs)}${oi.pct === null ? "" : ` (${formatSigned(oi.pct, 1)}%)`}`
+        : "--";
+
+    return `
+        <div class="summary-row momentum-row">
+            <span>${label}</span>
+            <strong>LTP ${priceText} · OI ${oiText}</strong>
+        </div>
+    `;
+}
+
+function optionCardHtml(name, item, type, showMomentum = false) {
+    const change = number(item.ltpch, 0);
+    const sentiment = optionOiSentiment(item.buildup, type);
+
+    return `
+        <article class="panel option-card">
+            <div class="panel-heading">
+                <div>
+                    <span class="eyebrow">${escapeHtml(name)}</span>
+                    <h3>${formatNumber(item.ltp)}</h3>
+                </div>
+                <span class="change-pill ${change >= 0 ? "positive" : "negative"}">
+                    ${formatSigned(change)}
+                </span>
+            </div>
+            <div class="summary-row">
+                <span>Open interest</span>
+                <strong>${formatCompact(item.oi)}</strong>
+            </div>
+            <div class="summary-row">
+                <span>Change in OI</span>
+                <strong>${formatCompact(item.oich)}</strong>
+            </div>
+            <div class="summary-row">
+                <span>Positioning</span>
+                <strong class="status-pill ${sentimentClass(item.buildup)}">
+                    ${escapeHtml(item.buildup || "--")}
+                </strong>
+            </div>
+            <div class="summary-row">
+                <span>OI Sentiment</span>
+                <strong class="status-pill ${sentiment.className}">
+                    ${sentiment.label}
+                </strong>
+            </div>
+            ${showMomentum
+                ? momentumLine(item, "m5", "Last 5 min") +
+                  momentumLine(item, "m15", "Last 15 min")
+                : ""}
+        </article>
+    `;
+}
+
+function renderOptionsLadder(options, rows) {
+    const ladder = $("optionsLadder");
+    const summaryBox = $("ladderSummary");
+    if (!ladder || !summaryBox) return;
+
+    if (!rows.length) {
+        ladder.hidden = true;
+        summaryBox.innerHTML = "";
+        return;
+    }
+
+    ladder.hidden = false;
+
+    const summary = options.ladder_summary || {};
+    const momentum = options.ladder_momentum || {};
+    const score = number(summary.score);
+    const directionClass = summary.direction === "up"
+        ? "positive"
+        : summary.direction === "down" ? "negative" : "neutral";
+
+    const reasons = (Array.isArray(summary.reasons) ? summary.reasons : [])
+        .map(text => `<li>${escapeHtml(text)}</li>`)
+        .join("");
+
+    const windows = ["m5", "m15"].map(key => {
+        const win = momentum[key] || {};
+        if (!win.available) {
+            const minutes = key === "m5" ? 5 : 15;
+            return `<div class="momentum-card"><strong>Last ${minutes} min</strong>
+                <span class="muted small-text">Collecting data: needs about ${minutes} minutes of earlier runs.</span></div>`;
+        }
+
+        const alert = win.alert
+            ? `<div class="momentum-alert ${win.alert.direction}">🚨 ${escapeHtml(win.alert.text)}</div>`
+            : "";
 
         return `
-            <article class="panel option-card">
-                <div class="panel-heading">
-                    <div>
-                        <span class="eyebrow">${escapeHtml(contract.name)}</span>
-                        <h3>${formatNumber(item.ltp)}</h3>
-                    </div>
-                    <span class="change-pill ${change >= 0 ? "positive" : "negative"}">
-                        ${formatSigned(change)}
-                    </span>
-                </div>
-                <div class="summary-row">
-                    <span>Open interest</span>
-                    <strong>${formatCompact(item.oi)}</strong>
-                </div>
-                <div class="summary-row">
-                    <span>Change in OI</span>
-                    <strong>${formatCompact(item.oich)}</strong>
-                </div>
-                <div class="summary-row">
-                    <span>Positioning</span>
-                    <strong class="status-pill ${sentimentClass(item.buildup)}">
-                        ${escapeHtml(item.buildup || "--")}
-                    </strong>
-                </div>
-                <div class="summary-row">
-                    <span>OI Sentiment</span>
-                    <strong class="status-pill ${sentiment.className}">
-                        ${sentiment.label}
-                    </strong>
-                </div>
-            </article>
+            <div class="momentum-card">
+                <strong>Last ${win.minutes} min <span class="muted small-text">(vs ${number(win.actual_minutes, 0).toFixed(1)} min ago)</span></strong>
+                <span class="small-text">Call premiums ${formatSigned(win.ce_premium_pct, 1)}% · Put premiums ${formatSigned(win.pe_premium_pct, 1)}%</span>
+                <span class="small-text">OI added: calls ${formatCompact(win.ce_oi_added)} · puts ${formatCompact(win.pe_oi_added)}</span>
+                ${alert}
+            </div>
         `;
     }).join("");
+
+    summaryBox.innerHTML = `
+        <article class="panel ladder-summary">
+            <div class="panel-topline">
+                <span class="eyebrow">5-STRIKE READ (ATM ±2)</span>
+                <span class="status-pill ${directionClass}">${escapeHtml(summary.label || "--")}${score === null ? "" : ` · ${formatSigned(score * 100, 0)}`}</span>
+            </div>
+            <ul class="ladder-reasons">${reasons}</ul>
+            <div class="muted small-text">
+                Support (max put OI in these strikes): ${formatNumber(summary.support_strike, 0)}
+                · Resistance (max call OI): ${formatNumber(summary.resistance_strike, 0)}
+            </div>
+            <div class="momentum-grid">${windows}</div>
+            <p class="muted small-text">
+                Rule-based reading of OI and premium changes, not a prediction or advice.
+                Premium changes compare this run with earlier runs.
+            </p>
+        </article>
+    `;
+
+    ladder.innerHTML = rows.map(row => `
+        <div class="ladder-row ${row.offset === 0 ? "atm" : ""}">
+            <div class="ladder-strike">
+                <span class="eyebrow">${escapeHtml(row.label)}</span>
+                <strong>${formatNumber(row.strike, 0)}</strong>
+            </div>
+            ${optionCardHtml(`${row.label} Call (CE)`, row.ce, "call", true)}
+            ${optionCardHtml(`${row.label} Put (PE)`, row.pe, "put", true)}
+        </div>
+    `).join("");
 }
 
 // ---------- Global markets, score breakdown and news ----------

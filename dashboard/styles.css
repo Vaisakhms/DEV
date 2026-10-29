@@ -1178,6 +1178,96 @@ a:hover {
     gap: 16px;
 }
 
+.options-cards-grid[hidden],
+.options-ladder[hidden] {
+    display: none;
+}
+
+.options-ladder {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.ladder-row {
+    display: grid;
+    grid-template-columns: 90px repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    align-items: stretch;
+}
+
+.ladder-row.atm .option-card {
+    border-color: var(--blue);
+}
+
+.ladder-strike {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 4px;
+}
+
+.ladder-strike strong {
+    font-size: 16px;
+}
+
+.ladder-row .option-card {
+    padding: 14px;
+}
+
+.ladder-summary {
+    margin-bottom: 14px;
+    padding: 18px;
+}
+
+.ladder-reasons {
+    margin: 10px 0;
+    padding-left: 18px;
+    font-size: 13px;
+    line-height: 1.7;
+}
+
+.momentum-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 10px;
+    margin: 12px 0;
+}
+
+.momentum-card {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-small);
+}
+
+.momentum-alert {
+    margin-top: 4px;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--yellow);
+}
+
+.momentum-alert.up { color: var(--green); }
+.momentum-alert.down { color: var(--red); }
+
+.momentum-row {
+    font-size: 11px;
+}
+
+@media (max-width: 900px) {
+    .ladder-row {
+        grid-template-columns: 1fr;
+    }
+
+    .ladder-strike {
+        flex-direction: row;
+        align-items: baseline;
+    }
+}
+
 .option-card {
     padding: 20px;
 

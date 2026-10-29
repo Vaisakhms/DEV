@@ -27,7 +27,7 @@
         rel="stylesheet"
     >
 
-    <link rel="stylesheet" href="./styles.css?v=vaistrike-gap-2">
+    <link rel="stylesheet" href="./styles.css?v=vaistrike-gap-3">
 
     <!-- Lightweight Charts for interactive candlestick charts -->
     <script
@@ -35,7 +35,7 @@
         src="https://unpkg.com/lightweight-charts@4.2.2/dist/lightweight-charts.standalone.production.js"
     ></script>
 
-    <script defer src="./app.js?v=vaistrike-gap-2"></script>
+    <script defer src="./app.js?v=vaistrike-gap-3"></script>
 </head>
 
 <body>
@@ -483,6 +483,10 @@
                 <div class="section-subheading">
                     <h3>ATM Call / Put Snapshot</h3>
                 </div>
+
+                <div id="ladderSummary"></div>
+
+                <div id="optionsLadder" class="options-ladder" hidden></div>
 
                 <div id="optionsCards" class="options-cards-grid">
 

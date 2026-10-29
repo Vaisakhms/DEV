@@ -44,6 +44,12 @@ from gap_outlook import (
     overall_weight,
     render_gap_outlook_lines,
 )
+from option_ladder import (
+    build_ladder,
+    ladder_momentum,
+    record_option_history,
+    summarize_ladder,
+)
 from strategy_engine import evaluate_strategy
 
 
@@ -1193,6 +1199,25 @@ def fetch_fyers_options(spot_hint):
             for option_type, item in legs.items()
         }
 
+    def ladder_leg(item, side):
+        buildup = classify_buildup(number(item, "ltpch"), number(item, "oich"))
+        return {
+            "ltp": number(item, "ltp"),
+            "ltpch": number(item, "ltpch"),
+            "oi": number(item, "oi"),
+            "oich": number(item, "oich"),
+            "buildup": buildup,
+            "bias": BUILDUP_VALUE[side][buildup],
+        }
+
+    ladder = build_ladder(strikes, atm, ladder_leg)
+    sorted_strikes = sorted(strikes)
+    strike_step = (
+        min(b - a for a, b in zip(sorted_strikes, sorted_strikes[1:]))
+        if len(sorted_strikes) > 1
+        else None
+    )
+
     return {
         "source": "Fyers",
         "captured_at": captured_at.isoformat(),
@@ -1201,6 +1226,9 @@ def fetch_fyers_options(spot_hint):
         "spot": spot,
         "spot_live": live_spot is not None and live_spot > 0,
         "atm": atm,
+        "strike_step": strike_step,
+        "ladder": ladder,
+        "ladder_summary": summarize_ladder(ladder),
         "lot_size": lot_size,
         "chain": chain_snapshot,
         "ce": ce,
@@ -1334,6 +1362,10 @@ def options_for_dashboard(options):
         "support": options.get("support"),
         "pcr_score": options.get("pcr_score"),
         "oi_score": options.get("oi_score"),
+        "strike_step": options.get("strike_step"),
+        "ladder": options.get("ladder"),
+        "ladder_summary": options.get("ladder_summary"),
+        "ladder_momentum": options.get("ladder_momentum"),
     }
 
     for option_type in ("ce", "pe"):
@@ -1349,6 +1381,59 @@ def options_for_dashboard(options):
             }
 
     return result
+
+
+def render_ladder_lines(options):
+    rows = options.get("ladder") or []
+    summary = options.get("ladder_summary")
+    if not rows or not summary:
+        return []
+
+    short = {
+        "Long buildup": "LB", "Short buildup": "SB",
+        "Short covering": "SC", "Long unwinding": "LU", "No change": "-",
+    }
+    lines = [
+        "  • *5-strike read (ATM±2)*: *%s* (score %+.0f/100)"
+        % (summary["label"], summary["score"] * 100)
+    ]
+    for reason in summary["reasons"]:
+        lines.append("    – " + reason)
+
+    lines.append("  _Strike: CE ltp/OI/ΔOI/pos | PE ltp/OI/ΔOI/pos_")
+    for row in rows:
+        ce, pe = row["ce"], row["pe"]
+        lines.append(
+            "  `%-5s %5.0f` CE %.1f/%s/%s/%s | PE %.1f/%s/%s/%s" % (
+                row["label"], row["strike"],
+                ce["ltp"], lakh(ce["oi"]), lakh(ce["oich"]),
+                short.get(ce["buildup"], "-"),
+                pe["ltp"], lakh(pe["oi"]), lakh(pe["oich"]),
+                short.get(pe["buildup"], "-"),
+            )
+        )
+
+    momentum = options.get("ladder_momentum") or {}
+    for key in ("m5", "m15"):
+        window = momentum.get(key) or {}
+        if not window.get("available"):
+            lines.append("  • %d-min change: collecting data" % window.get("minutes", 0))
+            continue
+        lines.append(
+            "  • *%d-min change*: call premiums %+.1f%% | put premiums %+.1f%% | "
+            "OI added: calls %s, puts %s"
+            % (
+                window["minutes"],
+                window["ce_premium_pct"] or 0.0,
+                window["pe_premium_pct"] or 0.0,
+                lakh(window["ce_oi_added"]),
+                lakh(window["pe_oi_added"]),
+            )
+        )
+        if window.get("alert"):
+            lines.append("    🚨 " + window["alert"]["text"])
+
+    return lines
 
 
 def render_options(options):
@@ -1408,6 +1493,8 @@ def render_options(options):
                 "%.2f" % options["zone_pcr"] if options.get("zone_pcr") is not None else "unavailable",
             )
         )
+
+        lines.extend(render_ladder_lines(options))
 
     else:
         lines.append(
@@ -2080,6 +2167,27 @@ def main():
         or fetch_nse_fallback()
     )
 
+    option_history = None
+    if options and options.get("ladder"):
+        try:
+            options["ladder_momentum"] = ladder_momentum(
+                prior_strategy_state.get("option_history"),
+                options["ladder"],
+                options["captured_at"],
+                options["expiry"],
+            )
+            option_history = record_option_history(
+                prior_strategy_state.get("option_history"),
+                options["captured_at"],
+                options["expiry"],
+                options["atm"],
+                options.get("strike_step"),
+                options["chain"],
+            )
+        except Exception as exc:
+            print("Option ladder momentum error:", exc)
+            option_history = prior_strategy_state.get("option_history")
+
     def score_of(item):
         return item["score"] if item else None
 
@@ -2178,6 +2286,8 @@ def main():
             "expiry": options.get("expiry"),
             "chain": options["chain"],
         }
+        if option_history is not None:
+            next_strategy_state["option_history"] = option_history
     persist_strategy_state(next_strategy_state, strategy)
 
     # --------------------------------------------------------
